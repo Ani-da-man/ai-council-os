@@ -52,11 +52,11 @@ npm run build
 
 ## AI options
 
-- **Gemini cloud models:** configure a Google AI API key in the app's model settings. The app uses its configured Gemini 3 family choices and can fall through its available cloud models.
+- **Use your own Gemini key:** open the app's **🔑 Configuration** settings, choose a Gemini cloud model (including the flagship option when available), paste your Google AI API key into **Gemini API Key**, then choose **Save Configuration**. The key is saved in that browser's local storage and used for Gemini cloud responses. The app currently supports Gemini keys; other providers' API keys are not interchangeable.
 - **Gemma in the browser:** local inference uses WebGPU and may need to download model weights the first time. Device and browser support vary.
 - **Stark fallback:** a built-in contextual advisor is available if live model calls cannot run.
 
-The demo workspace snapshot does not need an API key. Live AI responses need a configured cloud key or a browser/device that can run local Gemma; otherwise, the built-in fallback is used.
+The demo workspace snapshot does not need an API key. Live Gemini responses require your configured Gemini key; local Gemma can run without a key when the browser supports WebGPU. If neither is available, the built-in fallback is used.
 
 ## Deploy to Render
 
