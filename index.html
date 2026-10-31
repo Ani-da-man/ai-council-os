@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>A.I. Council OS — Founder Intelligence Nexus</title>
     <meta name="description" content="Autonomous AI Board of Directors deliberating on startup visions in real time." />
+    <script>
+      // Automatically unregister any stale service workers or caches from previous apps on this local port
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var reg of registrations) {
+            reg.unregister();
+          }
+        }).catch(function() {});
+      }
+    </script>
   </head>
   <body class="bg-[#060810] text-slate-100">
     <div id="root"></div>
