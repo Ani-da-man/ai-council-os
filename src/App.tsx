@@ -225,8 +225,12 @@ export default function App() {
   const [deliberationFeed, setDeliberationFeed] = useState<CouncilThought[]>([]);
   const [synthesis, setSynthesis] = useState<CouncilSynthesis | null>(null);
   const [activeModel, setActiveModel] = useState<IntelligenceTier | null>(null);
-  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY') || '');
-  const [geminiModel, setGeminiModel] = useState<string>(() => localStorage.getItem('GEMINI_MODEL') || DEFAULT_GEMINI_MODEL);
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    return localStorage.getItem('GEMINI_API_KEY') || ((import.meta as any).env?.VITE_GEMINI_API_KEY as string) || '';
+  });
+  const [geminiModel, setGeminiModel] = useState<string>(() => {
+    return localStorage.getItem('GEMINI_MODEL') || ((import.meta as any).env?.VITE_GEMINI_MODEL as string) || DEFAULT_GEMINI_MODEL;
+  });
   const [customModelId, setCustomModelId] = useState<string>(() => localStorage.getItem('GEMINI_CUSTOM_MODEL_ID') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
   const webllmEngineRef = useRef<any>(null);
