@@ -3,7 +3,8 @@ import {
   Mic, MicOff, Send, Cpu, Sparkles, ShieldCheck,
   Zap, RefreshCw,
   ChevronRight, ChevronLeft, Key, User, Briefcase, Lock,
-  CheckCircle2, ArrowRight, X, History, AlertCircle, Download, Check
+  CheckCircle2, ArrowRight, X, History, AlertCircle, Download, Check,
+  LayoutDashboard, Map, MessageCircle, Users, Target
 } from 'lucide-react';
 
 // ==========================================
@@ -11,7 +12,7 @@ import {
 // ==========================================
 // ENGINE 1 (Active)  : Google Gemini Flagship / Flash (Cloud)
 //                      Requires an AQ. or AIzaSy Gemini API key (or auto-loaded via VITE_GEMINI_API_KEY).
-//                      Intelligent cascade: gemini-2.5-pro -> gemini-3-flash-preview -> gemini-flash-lite-latest -> gemini-3.5-flash.
+//                      Intelligent cascade: Gemini 3 -> Gemini 3.5 -> Gemini 3.8.
 // ENGINE 2 (Active)  : Gemma 2 2B via WebLLM (In-Browser Local)
 //                      Runs 100% client-side via WebGPU. Zero API key, zero latency, cached to IndexedDB.
 // ENGINE 3 (Standby) : Context-Aware Stark Engine (Emergency Safety Net)
@@ -33,7 +34,8 @@ export type AppStage =
   | 'meet_council'
   | 'vision_input'
   | 'deliberation'
-  | 'evaluation_sheet';
+  | 'evaluation_sheet'
+  | 'workspace';
 
 export type IntelligenceTier = string;
 export type EnginePreference = 'auto' | 'gemini' | 'gemma';
@@ -199,6 +201,7 @@ const DEMO_VISIONS = [
 ];
 
 function getTierLabel(tier: IntelligenceTier): { label: string; color: string; dot: string } {
+  if (tier === 'demo_snapshot') return { label: 'Sample Demo Snapshot', color: 'text-violet-300', dot: 'bg-violet-400' };
   if (tier.includes('3-flash') || tier.includes('gemini-3')) return { label: 'Gemini 3 Flash (Active Cloud)', color: 'text-cyan-400', dot: 'bg-cyan-400' };
   if (tier.includes('flash-lite')) return { label: 'Gemini Flash-Lite (Active Cloud)', color: 'text-teal-400', dot: 'bg-teal-400' };
   if (tier.includes('2.5-pro')) return { label: 'Gemini 2.5 Pro (Flagship Reasoning)', color: 'text-cyan-400', dot: 'bg-cyan-400' };
@@ -339,7 +342,10 @@ export default function App() {
 
   const [geminiModel, setGeminiModel] = useState<string>(() => {
     try {
-      return localStorage.getItem('GEMINI_MODEL') || ((import.meta as any).env?.VITE_GEMINI_MODEL as string) || DEFAULT_GEMINI_MODEL;
+      const savedModel = localStorage.getItem('GEMINI_MODEL') || ((import.meta as any).env?.VITE_GEMINI_MODEL as string) || DEFAULT_GEMINI_MODEL;
+      return ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'].includes(savedModel)
+        ? savedModel
+        : DEFAULT_GEMINI_MODEL;
     } catch {
       return DEFAULT_GEMINI_MODEL;
     }
@@ -402,6 +408,16 @@ export default function App() {
   });
 
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<'overview' | 'roadmap' | 'council' | 'advisor'>('overview');
+  const [selectedAdvisorId, setSelectedAdvisorId] = useState(COUNCIL_PERSONAS[0].id);
+  const [advisorInput, setAdvisorInput] = useState('');
+  const [advisorBusy, setAdvisorBusy] = useState(false);
+  const [isShowcaseDemo, setIsShowcaseDemo] = useState(() => {
+    try { return localStorage.getItem('COUNCIL_SHOWCASE_DEMO') === 'true'; } catch { return false; }
+  });
+  const [advisorChats, setAdvisorChats] = useState<Record<string, { role: 'founder' | 'advisor'; text: string }[]>>(() => {
+    try { return JSON.parse(localStorage.getItem('COUNCIL_ADVISOR_CHATS') || '{}'); } catch { return {}; }
+  });
 
   useEffect(() => {
     try { localStorage.setItem('COUNCIL_STAGE', stage); } catch (e) { console.warn(e); }
@@ -418,6 +434,10 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem('COUNCIL_VENTURE_HISTORY', JSON.stringify(ventureHistory)); } catch (e) { console.warn(e); }
   }, [ventureHistory]);
+
+  useEffect(() => {
+    try { localStorage.setItem('COUNCIL_ADVISOR_CHATS', JSON.stringify(advisorChats)); } catch (e) { console.warn(e); }
+  }, [advisorChats]);
 
   useEffect(() => {
     try { localStorage.setItem('COUNCIL_ENGINE_PREF', enginePreference); } catch (e) { console.warn(e); }
@@ -478,6 +498,8 @@ export default function App() {
       return;
     }
     setAuthError('');
+    setIsShowcaseDemo(false);
+    try { localStorage.removeItem('COUNCIL_SHOWCASE_DEMO'); } catch {}
     setProfile(prev => ({ ...prev, email: authEmail, isAuthenticated: true }));
     setStage('profile');
   };
@@ -486,6 +508,8 @@ export default function App() {
     setAuthEmail('founder@starklabs.io');
     setAuthPassword('supersecretfounder123');
     setAuthError('');
+    setIsShowcaseDemo(false);
+    try { localStorage.removeItem('COUNCIL_SHOWCASE_DEMO'); } catch {}
     setProfile(prev => ({
       ...prev,
       email: 'founder@starklabs.io',
@@ -562,17 +586,11 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
   };
 
   const executeGeminiDeliberationCascade = async (vision: string): Promise<void> => {
-    const primary = geminiModel === 'custom' && customModelId.trim() ? customModelId.trim() : geminiModel;
-    // Smart ordered cascade of verified active endpoints
-    const modelsToTry = [
-      primary,
-      'gemini-3-flash-preview',
-      'gemini-flash-lite-latest',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash'
-    ];
-    // Deduplicate maintaining order
-    const candidateModels = Array.from(new Set(modelsToTry));
+    // Restrict cloud inference to the approved Gemini 3 family, including when
+    // an older or custom model value remains in this browser's localStorage.
+    const allowedModels = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+    const candidateModels = [geminiModel, ...allowedModels]
+      .filter((modelId, index, models) => allowedModels.includes(modelId) && models.indexOf(modelId) === index);
 
     let lastError: any = null;
     for (const modelId of candidateModels) {
@@ -674,6 +692,14 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     }
   };
 
+  // Warm the local SLM when the founder reaches vision entry, so it is ready
+  // before the cloud path needs to fall back to it.
+  useEffect(() => {
+    if (stage === 'vision_input' && typeof (navigator as any).gpu !== 'undefined' && gemmaStatus === 'idle') {
+      void initWebLLMEngine().catch(err => console.warn('[WebLLM] Background warm-up failed:', err));
+    }
+  }, [stage, gemmaStatus]);
+
   // ==========================================
   // ENGINE 3: Dynamic Stark Engine (Safety Fallback)
   // ==========================================
@@ -749,25 +775,99 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
   };
 
   const handleCommitEvaluation = () => {
+    const updatedEvaluation = { ...evalSheet, lastUpdated: new Date().toLocaleString() };
     const cycle: VentureCycleLog = {
       id: `cycle-${Date.now()}`,
       timestamp: new Date().toLocaleString(),
       cycleNumber: ventureHistory.length + 1,
       visionSnippet: visionText.slice(0, 120) || 'Core Venture Inception',
       councilVerdict: synthesis?.verdict || 'Council Deliberation Completed',
-      evaluationSnapshot: { ...evalSheet, lastUpdated: new Date().toLocaleString() },
+      evaluationSnapshot: updatedEvaluation,
       modelUsed: activeModel || 'stark_engine'
     };
+    setEvalSheet(updatedEvaluation);
     setVentureHistory(prev => [cycle, ...prev]);
-    alert(`Cycle #${cycle.cycleNumber} saved to Venture Trajectory.`);
+    try { localStorage.setItem('COUNCIL_WORKSPACE_READY', 'true'); } catch {}
+    setStage('workspace');
+    setWorkspaceTab('overview');
   };
 
   const handleStartNewLoop = () => {
-    setVisionText('');
+    setVisionText(prev => prev || ventureHistory[0]?.visionSnippet || '');
     setDeliberationFeed([]);
     setSynthesis(null);
     setActiveModel(null);
-    setStage('vision_input');
+    triggerCouncilDeliberation(visionText || ventureHistory[0]?.visionSnippet);
+  };
+
+  const openShowcaseDemo = () => {
+    const demoVision = DEMO_VISIONS[1].text;
+    const demoEvaluation: EvaluationSheet = {
+      currentStage: 'Closed Beta',
+      topPriority: 'Run a two-week pilot with three city teams and measure time-to-response.',
+      criticalBottleneck: 'Proving reliable detection in varied lighting and weather conditions.',
+      nextMilestone: 'Complete 3 pilots and publish a verified detection accuracy report.',
+      runwayMonths: '8 months',
+      confidenceScore: 7,
+      lastUpdated: new Date().toLocaleDateString()
+    };
+    const demoVerdict = 'Prove that city teams act faster and spend less when road and waste hazards are detected early.';
+    setProfile({ name: 'Demo Founder', role: 'CEO & Co-Founder', companyName: 'CleanCity AI', isAuthenticated: true, email: 'demo@example.com' });
+    setVisionText(demoVision);
+    setEvalSheet(demoEvaluation);
+    setSynthesis({ verdict: demoVerdict, actionItems: ['Run a focused pilot with three municipal teams.', 'Track precision, response time, and cost per resolved issue.', 'Interview operators weekly and remove false-positive friction.'], riskFactor: 'Moderate' });
+    setDeliberationFeed([
+      { id: 'jarvis', personaName: 'J.A.R.V.I.S.', role: 'Chief of Staff & Governance', thought: 'Define data retention and municipal access roles before expanding camera coverage.', status: 'completed' },
+      { id: 'friday', personaName: 'F.R.I.D.A.Y.', role: 'Product & Tech Lead', thought: 'Keep the pilot focused on the two hazard classes operators act on most often.', status: 'completed' },
+      { id: 'edith', personaName: 'E.D.I.T.H.', role: 'Strategy & Investor Lens', thought: 'Measure operational savings and response time; those outcomes support a credible buying case.', status: 'completed' },
+      { id: 'dume', personaName: 'D.U.M.-E', role: 'Founder Morale & Wellness', thought: 'A small, well-measured pilot is meaningful progress. Protect time for recovery between field visits.', status: 'completed' },
+      { id: 'ultron', personaName: 'ULTRON', role: 'Reality Check & Tough Love', thought: 'The threat is false positives. If operators stop trusting alerts, the product has no value. Measure trust alongside model accuracy.', status: 'completed' }
+    ]);
+    setAdvisorChats(prev => ({
+      ...prev,
+      friday: [
+        { role: 'founder', text: 'What should I focus on during the next pilot sprint?' },
+        { role: 'advisor', text: 'Keep the sprint narrow: improve reliability for the two hazard types operators act on most, add a simple review queue, and measure alert-to-action time. Hold new integrations until the pilot proves teams are using the alerts.' }
+      ]
+    }));
+    setActiveModel('demo_snapshot');
+    setVentureHistory([{ id: 'demo-cycle-1', timestamp: new Date().toLocaleDateString(), cycleNumber: 1, visionSnippet: demoVision.slice(0, 120), councilVerdict: demoVerdict, evaluationSnapshot: demoEvaluation, modelUsed: 'demo_snapshot' }]);
+    setIsShowcaseDemo(true);
+    try { localStorage.setItem('COUNCIL_SHOWCASE_DEMO', 'true'); } catch {}
+    setWorkspaceTab('overview');
+    setStage('workspace');
+  };
+
+  const sendAdvisorMessage = async () => {
+    const text = advisorInput.trim();
+    if (!text || advisorBusy) return;
+    const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0];
+    const thread = [...(advisorChats[advisor.id] || []), { role: 'founder' as const, text }];
+    setAdvisorChats(prev => ({ ...prev, [advisor.id]: thread }));
+    setAdvisorInput('');
+    setAdvisorBusy(true);
+    try {
+      let reply = '';
+      if (geminiApiKey.trim()) {
+        const model = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'].includes(geminiModel) ? geminiModel : DEFAULT_GEMINI_MODEL;
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Founder: ${profile.name}. Venture: ${profile.companyName}. Venture context: ${visionText}. Reply directly to the founder with specific, practical help in a supportive voice.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
+        });
+        if (!response.ok) throw new Error(`Gemini returned HTTP ${response.status}`);
+        const result = await response.json();
+        reply = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      }
+      if (!reply && typeof (navigator as any).gpu !== 'undefined') {
+        const engine = await initWebLLMEngine();
+        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Give practical founder advice.` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 350 });
+        reply = result.choices[0]?.message?.content?.trim() || '';
+      }
+      if (!reply) reply = `${advisor.name} is ready to help with ${advisor.expertise[0].toLowerCase()}. Configure a Gemini key or enable WebGPU for a live AI reply. For now, frame the decision, the evidence you have, and what you need to decide next.`;
+      setAdvisorChats(prev => ({ ...prev, [advisor.id]: [...(prev[advisor.id] || thread), { role: 'advisor', text: reply }] }));
+    } catch (error: any) {
+      setAdvisorChats(prev => ({ ...prev, [advisor.id]: [...(prev[advisor.id] || thread), { role: 'advisor', text: `I couldn't reach the live model just now (${error?.message || 'connection issue'}). Your message is saved; try again in a moment or convene the full council.` }] }));
+    } finally { setAdvisorBusy(false); }
   };
 
   return (
@@ -777,7 +877,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       {/* HEADER */}
       <header className="relative z-20 border-b border-slate-800/80 bg-[#060810]/80 backdrop-blur-md sticky top-0">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setStage('welcome')}>
+          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setStage(stage === 'workspace' ? 'workspace' : 'welcome')}>
             <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-950/80 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
               <Cpu className="w-5 h-5 text-cyan-400 animate-pulse" />
             </div>
@@ -832,6 +932,20 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         </div>
       </header>
 
+      {stage === 'workspace' && (
+        <nav className="relative z-10 border-b border-slate-800/80 bg-slate-950/70">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-2 flex gap-2 overflow-x-auto">
+            {([
+              ['overview', LayoutDashboard, 'Overview'], ['roadmap', Map, 'Roadmap'], ['council', Users, 'AI Council'], ['advisor', MessageCircle, 'Talk to an Advisor']
+            ] as const).map(([tab, Icon, label]) => (
+              <button key={tab} onClick={() => setWorkspaceTab(tab)} className={`shrink-0 px-3 py-2 rounded-lg flex items-center gap-2 text-xs font-semibold transition ${workspaceTab === tab ? 'bg-cyan-950 text-cyan-300 border border-cyan-700/70' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}>
+                <Icon className="w-4 h-4" />{label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+
       <main className="relative z-10 flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-8 w-full">
 
         {/* STAGE 1: WELCOME */}
@@ -839,7 +953,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
           <div className="py-12 md:py-16 text-center space-y-8 max-w-3xl mx-auto">
             <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 text-cyan-300 text-xs tracking-wider">
               <Sparkles className="w-4 h-4 text-cyan-400" />
-              <span>Dual Active Intelligence: Cloud Gemini 3/2.5 Pro + In-Browser Gemma 2 2B</span>
+              <span>Dual Active Intelligence: Cloud Gemini 3 Family + In-Browser Gemma 2 2B</span>
             </div>
             <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-tight">
               Never Founder Alone.{' '}
@@ -877,7 +991,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               ))}
             </div>
 
-            <div className="pt-4">
+            <div className="pt-4 flex flex-col items-center gap-3">
               <button
                 onClick={() => setStage('auth')}
                 className="w-full sm:w-auto px-8 py-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-base shadow-[0_0_30px_rgba(6,182,212,0.5)] flex items-center justify-center space-x-2 mx-auto transition"
@@ -885,6 +999,10 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
                 <span>Enter Founder Chamber</span>
                 <ArrowRight className="w-5 h-5" />
               </button>
+              <button onClick={openShowcaseDemo} className="px-6 py-2.5 rounded-xl border border-violet-500/50 bg-violet-950/30 text-violet-200 hover:bg-violet-900/50 font-semibold text-sm transition">
+                Explore the startup workspace demo
+              </button>
+              <p className="text-[11px] text-slate-500">Opens a sample venture with a populated dashboard, roadmap, council session, and advisor chat.</p>
             </div>
           </div>
         )}
@@ -1429,6 +1547,58 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
             </div>
           </div>
         )}
+
+        {stage === 'workspace' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-800 pb-5">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">{isShowcaseDemo ? 'Sample demo workspace · Founder view' : 'Founder workspace · Venture HQ'}</span>
+                <h1 className="text-3xl sm:text-4xl font-black text-white mt-1">{profile.companyName || 'Your startup'}</h1>
+                <p className="text-sm text-slate-400 mt-1">A living view of your venture, your next moves, and the people in your corner.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isShowcaseDemo && <button onClick={() => setStage('welcome')} className="px-3 py-2 rounded-lg border border-slate-700 text-slate-400 text-xs hover:text-white">Back to welcome</button>}
+                <button onClick={handleStartNewLoop} className="px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.25)]"><RefreshCw className="w-4 h-4" /> Convene AI Council</button>
+              </div>
+            </div>
+
+            {workspaceTab === 'overview' && (
+              <div className="space-y-5">
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5"><div className="text-[10px] uppercase font-mono text-slate-500">Current stage</div><div className="text-lg font-bold text-white mt-2">{evalSheet.currentStage}</div><div className="text-xs text-cyan-300 mt-2">Cycle #{ventureHistory.length || 1}</div></div>
+                  <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5"><div className="text-[10px] uppercase font-mono text-slate-500">Founder energy</div><div className="text-3xl font-black text-yellow-300 mt-1">{evalSheet.confidenceScore}<span className="text-sm text-slate-500"> / 10</span></div><div className="h-1.5 bg-slate-800 rounded-full mt-3"><div className="h-full bg-yellow-400 rounded-full" style={{ width: `${evalSheet.confidenceScore * 10}%` }} /></div></div>
+                  <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5"><div className="text-[10px] uppercase font-mono text-slate-500">Runway estimate</div><div className="text-lg font-bold text-white mt-2">{evalSheet.runwayMonths}</div><div className="text-xs text-slate-500 mt-2">Update this in your evaluation snapshot</div></div>
+                </div>
+                <div className="grid lg:grid-cols-[1.2fr_.8fr] gap-4">
+                  <section className="rounded-2xl bg-slate-900/80 border border-cyan-900/70 p-5 space-y-4">
+                    <div className="flex items-center gap-2 text-cyan-300"><Target className="w-4 h-4"/><h2 className="font-bold">Your focus right now</h2></div>
+                    <div><div className="text-[10px] uppercase font-mono text-slate-500">Immediate priority</div><p className="text-white font-semibold mt-1">{evalSheet.topPriority}</p></div>
+                    <div className="grid sm:grid-cols-2 gap-3"><div className="p-3 rounded-xl bg-slate-950/80"><div className="text-[10px] uppercase font-mono text-red-300">Bottleneck</div><p className="text-sm text-slate-200 mt-1">{evalSheet.criticalBottleneck}</p></div><div className="p-3 rounded-xl bg-slate-950/80"><div className="text-[10px] uppercase font-mono text-emerald-300">Next milestone</div><p className="text-sm text-slate-200 mt-1">{evalSheet.nextMilestone}</p></div></div>
+                    {synthesis && <div className="border-t border-slate-800 pt-3"><div className="text-[10px] uppercase font-mono text-slate-500">Latest council directive</div><p className="text-sm text-slate-200 mt-1">{synthesis.verdict}</p></div>}
+                    <button onClick={() => setStage('evaluation_sheet')} className="text-xs text-cyan-300 hover:text-cyan-200">Update venture evaluation →</button>
+                  </section>
+                  <section className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5"><h2 className="font-bold text-white">Your council</h2><p className="text-xs text-slate-500 mt-1">Five perspectives, available whenever you need them.</p><div className="mt-4 space-y-2">{COUNCIL_PERSONAS.map(persona => <button key={persona.id} onClick={() => { setSelectedAdvisorId(persona.id); setWorkspaceTab('advisor'); }} className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/70 hover:bg-slate-800 text-left"><span className={`w-8 h-8 rounded-lg ${persona.bgColor} ${persona.textColor} grid place-items-center font-black`}>{persona.avatarSymbol}</span><span><span className={`block text-xs font-bold ${persona.textColor}`}>{persona.name}</span><span className="block text-[10px] text-slate-500">{persona.role}</span></span><ChevronRight className="w-4 h-4 ml-auto text-slate-600" /></button>)}</div></section>
+                </div>
+                <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-5"><div className="flex justify-between items-center"><h2 className="font-bold text-white">Recent venture activity</h2><button onClick={() => setShowHistoryDrawer(true)} className="text-xs text-cyan-300">Full trajectory →</button></div>{ventureHistory.slice(0, 3).length ? <div className="mt-3 grid md:grid-cols-3 gap-3">{ventureHistory.slice(0, 3).map(item => <div key={item.id} className="p-3 rounded-xl bg-slate-950/70"><div className="text-[10px] font-mono text-cyan-400">CYCLE #{item.cycleNumber} · {item.timestamp}</div><p className="text-xs text-slate-300 mt-2 line-clamp-3">{item.councilVerdict}</p></div>)}</div> : <p className="text-sm text-slate-500 mt-3">Your saved council cycles will appear here.</p>}</div>
+              </div>
+            )}
+
+            {workspaceTab === 'roadmap' && (
+              <section className="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 sm:p-7">
+                <span className="text-[10px] font-mono uppercase text-cyan-400">Venture roadmap</span><h2 className="text-2xl font-black text-white mt-1">The next chapters</h2><p className="text-sm text-slate-400 mt-1">A simple stage map. Update your current stage and milestone as the company moves.</p>
+                <div className="mt-8 grid md:grid-cols-4 gap-3">{['Idea & Architecture', 'MVP Sprint', 'Closed Beta', 'Traction / Scaling'].map((roadmapStage, index) => { const current = roadmapStage === evalSheet.currentStage; const completed = ['Idea & Architecture', 'MVP Sprint', 'Closed Beta', 'Traction / Scaling'].indexOf(evalSheet.currentStage) > index; return <button key={roadmapStage} onClick={() => setEvalSheet(prev => ({ ...prev, currentStage: roadmapStage }))} className={`relative text-left p-4 rounded-xl border min-h-36 ${current ? 'border-cyan-500 bg-cyan-950/50 shadow-[0_0_25px_rgba(6,182,212,0.12)]' : completed ? 'border-emerald-800 bg-emerald-950/20' : 'border-slate-800 bg-slate-950/60'}`}><div className={`w-8 h-8 rounded-full grid place-items-center font-bold text-sm ${current ? 'bg-cyan-400 text-slate-950' : completed ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>{completed ? '✓' : index + 1}</div><h3 className="text-sm font-bold text-white mt-4">{roadmapStage}</h3><p className="text-[11px] text-slate-500 mt-1">{current ? 'Current chapter' : completed ? 'Previous chapter' : 'Up next'}</p>{index < 3 && <div className="hidden md:block absolute top-8 -right-3 w-3 h-px bg-slate-700"/>}</button>; })}</div>
+                <div className="mt-5 p-4 rounded-xl bg-slate-950/80 border border-slate-800 grid sm:grid-cols-2 gap-4"><div><div className="text-[10px] uppercase font-mono text-cyan-400">Next milestone</div><p className="text-sm text-slate-200 mt-1">{evalSheet.nextMilestone}</p></div><div><div className="text-[10px] uppercase font-mono text-red-300">Current bottleneck</div><p className="text-sm text-slate-200 mt-1">{evalSheet.criticalBottleneck}</p></div></div>
+                <button onClick={() => setStage('evaluation_sheet')} className="mt-4 px-4 py-2 rounded-lg border border-slate-700 text-xs text-slate-200 hover:border-cyan-500">Edit roadmap details</button>
+              </section>
+            )}
+
+            {workspaceTab === 'council' && (
+              <div className="space-y-4"><div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-5"><h2 className="text-xl font-black text-white">Convene the council</h2><p className="text-sm text-slate-400 mt-1">Bring all five advisors back around your current venture thesis.</p><button onClick={handleStartNewLoop} className="mt-4 px-5 py-2.5 rounded-xl bg-cyan-500 text-slate-950 text-sm font-bold flex items-center gap-2"><Users className="w-4 h-4"/>Start a new council session</button></div><div className="grid sm:grid-cols-2 gap-3">{COUNCIL_PERSONAS.map(persona => <button key={persona.id} onClick={() => { setSelectedAdvisorId(persona.id); setWorkspaceTab('advisor'); }} className={`p-4 rounded-2xl text-left border ${persona.borderColor} ${persona.bgColor}`}><div className={`font-black ${persona.textColor}`}>{persona.name}</div><div className="text-xs text-slate-300 mt-1">{persona.role}</div><p className="text-xs text-slate-500 mt-2">{persona.tagline}</p><span className="inline-block text-[10px] text-cyan-300 mt-3">Talk one-on-one →</span></button>)}</div>{deliberationFeed.length > 0 && <div className="space-y-3"><h3 className="font-bold text-white">Latest council session</h3>{deliberationFeed.map(thought => <div key={thought.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800"><div className="text-xs font-bold text-cyan-300">{thought.personaName}</div><p className="text-sm text-slate-300 mt-1">{thought.thought}</p></div>)}</div>}</div>
+            )}
+
+            {workspaceTab === 'advisor' && (() => { const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0]; const messages = advisorChats[advisor.id] || []; return <div className="max-w-3xl mx-auto rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden"><div className="p-4 border-b border-slate-800 flex items-center gap-3"><div className={`w-10 h-10 rounded-xl ${advisor.bgColor} ${advisor.textColor} grid place-items-center font-black`}>{advisor.avatarSymbol}</div><div><h2 className={`font-bold ${advisor.textColor}`}>Talk with {advisor.name}</h2><p className="text-[11px] text-slate-500">{advisor.role} · {advisor.tagline}</p></div><select value={advisor.id} onChange={event => setSelectedAdvisorId(event.target.value)} className="ml-auto max-w-36 bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs">{COUNCIL_PERSONAS.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}</select></div><div className="min-h-80 max-h-[55vh] overflow-y-auto p-4 space-y-3">{messages.length === 0 && <div className="text-center py-16"><MessageCircle className={`w-8 h-8 mx-auto ${advisor.textColor}`} /><p className="text-sm text-white mt-3">What’s on your mind?</p><p className="text-xs text-slate-500 mt-1">Ask for a second opinion, a next step, or help untangling a decision.</p></div>}{messages.map((message, index) => <div key={index} className={`max-w-[88%] p-3 rounded-xl text-sm whitespace-pre-wrap ${message.role === 'founder' ? 'ml-auto bg-cyan-950 text-cyan-50' : 'bg-slate-950 border border-slate-800 text-slate-200'}`}>{message.text}</div>)}{advisorBusy && <div className="text-xs text-slate-500 animate-pulse">{advisor.name} is thinking…</div>}</div><form onSubmit={event => { event.preventDefault(); void sendAdvisorMessage(); }} className="p-3 border-t border-slate-800 flex gap-2"><input value={advisorInput} onChange={event => setAdvisorInput(event.target.value)} placeholder={`Ask ${advisor.name} anything about the venture…`} className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-cyan-500"/><button disabled={advisorBusy || !advisorInput.trim()} className="px-4 rounded-xl bg-cyan-500 text-slate-950 disabled:opacity-40"><Send className="w-4 h-4"/></button></form></div>; })()}
+          </div>
+        )}
       </main>
 
       {/* HISTORY DRAWER */}
@@ -1535,28 +1705,11 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
                 onChange={e => setGeminiModel(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
               >
-                <option value="gemini-3-flash-preview">Gemini 3 Flash (Fast, Deep, Highly Responsive — Verified)</option>
-                <option value="gemini-flash-lite-latest">Gemini Flash-Lite Latest (Ultra High Speed — Verified)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Flagship Reasoning — with auto-cascade)</option>
+                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
                 <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
                 <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-                <option value="custom">Custom Model Identifier</option>
               </select>
             </div>
-
-            {geminiModel === 'custom' && (
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 font-mono">Custom Model Identifier</label>
-                <input
-                  type="text"
-                  placeholder="e.g. gemini-3.1-pro or gemini-2.0-pro-exp"
-                  value={customModelId}
-                  onChange={e => setCustomModelId(e.target.value)}
-                  className="w-full bg-slate-950 border border-cyan-500/50 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
-                />
-                <p className="text-[10px] text-slate-500">Auto-cascades to active Gemini models if quota or 404 occurs.</p>
-              </div>
-            )}
 
             <div>
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono">Gemini API Key</label>
@@ -1602,7 +1755,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       )}
 
       <footer className="relative z-10 border-t border-slate-900/80 py-4 text-center text-xs text-slate-600 font-mono">
-        A.I. Council OS | Gemini 3 / 2.5 Pro (Active Cloud) + Gemma 2 2B (Active WebLLM) + Stark Engine (Standby) | Built for Founders
+        A.I. Council OS | Gemini 3 Family (Active Cloud) + Gemma 2 2B (Active WebLLM) + Stark Engine (Standby) | Built for Founders
       </footer>
     </div>
   );
