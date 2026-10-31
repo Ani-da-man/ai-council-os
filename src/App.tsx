@@ -830,6 +830,11 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     setWorkspaceTab('overview');
   };
 
+  const handleContinueToWorkspace = () => {
+    setStage('workspace');
+    setWorkspaceTab('overview');
+  };
+
   const handleStartNewLoop = () => {
     setVisionText(prev => prev || ventureHistory[0]?.visionSnippet || '');
     setDeliberationFeed([]);
@@ -1594,19 +1599,27 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
                 <button
                   type="button"
-                  onClick={handleCommitEvaluation}
+                  onClick={handleContinueToWorkspace}
                   className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center space-x-2 transition"
                 >
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Save Snapshot</span>
+                  <LayoutDashboard className="w-4 h-4 text-cyan-400" />
+                  <span>Continue to Workspace</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCommitEvaluation}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center justify-center space-x-2 transition"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Save Snapshot & Open Workspace</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleStartNewLoop}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 hover:from-cyan-400 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.4)] flex items-center justify-center space-x-2 transition"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-indigo-500/50 bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-200 font-bold text-xs flex items-center justify-center space-x-2 transition"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  <span>Next Loop: Re-convene Council</span>
+                  <span>Iterate: Re-convene Council</span>
                 </button>
               </div>
             </div>

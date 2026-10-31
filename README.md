@@ -24,7 +24,7 @@ This is the quickest option for a short review. It opens saved sample content, s
 3. Enter a founder name, venture name, and role. Add your founder journey: career path, support or funding, and time available. These details can be changed later in the workspace.
 4. Continue through the council introduction, then describe a venture idea on the vision screen. You can type your own idea or choose one of the example ideas. If voice input is available in your browser, you can use it too.
 5. Choose **Convene the Council** to get perspectives from the five advisors. When cloud AI is unavailable or not configured, the app can use local Gemma when the browser supports WebGPU, then its built-in Stark fallback.
-6. Fill in the Startup Evaluation Sheet: choose the current stage and update your priority, bottleneck, milestone, runway, and energy. Save the evaluation to open the venture workspace.
+6. Fill in the Startup Evaluation Sheet: choose the current stage and update your priority, bottleneck, milestone, and runway. Choose **Continue to Workspace** to move on, **Save Snapshot & Open Workspace** to record this evaluation first, or **Iterate: Re-convene Council** to run another council cycle.
 7. In the workspace, use **Overview** to see current standing, **Roadmap** to track stages, **AI Council** to convene again or choose an advisor, and **Talk to an Advisor** for a one-on-one conversation. Return as the venture changes and update the evaluation to keep the advice current.
 
 ## What is in the workspace?
