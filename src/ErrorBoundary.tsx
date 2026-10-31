@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[AI Council OS] Uncaught render error caught by ErrorBoundary:', error, errorInfo);
+    console.error('[Venture Vision] Uncaught render error caught by ErrorBoundary:', error, errorInfo);
   }
 
   private handleResetState = () => {

@@ -1,65 +1,76 @@
-# A.I. Council OS — Founder Intelligence Nexus
+# Venture Vision
 
-> **Never Founder Alone.** An autonomous AI Board of Directors deliberating on your venture in real time.
+Venture Vision is a companion for the long journey of building a venture. It helps founders navigate entrepreneurship, choose their next steps, track progress, and find support as their goals and circumstances change.
 
-Built for founders, innovators, and builders to eliminate decision paralysis through structured, stage-by-stage multi-agent deliberation.
+The app brings together a five-person AI council, one-on-one advisor conversations, a venture roadmap, and a living evaluation sheet. Guidance can take the founder's career path, available time, support and funding, venture stage, runway, priorities, and energy into account.
 
----
+## Try the demo
 
-## ⚡ 8-Stage Founder Journey
+There are two ways to explore the app. No real account is needed; the sign-in is a demo flow and accepts any email and password.
 
-1. **Welcome Screen** — Cinematic Stark-inspired HUD introduction.
-2. **Dummy Authentication** — Frictionless demo login or instant 1-click bypass.
-3. **Founder Profile** — Personal identity and role assignment (CEO, CTO, Solo Builder, etc.).
-4. **Council Induction** — Clearance Level: Founder-Omega ceremony.
-5. **Meet the Council** — Individual, interactive step-by-step introduction to each AI persona:
-   - **J.A.R.V.I.S.** — Chief of Staff & Governance (Legal, entity formation, execution timelines)
-   - **F.R.I.D.A.Y.** — Product & Tech Lead (Scope cutting, architecture, shipping velocity)
-   - **E.D.I.T.H.** — Strategy & Investor Lens (Moats, TAM/SAM, pitch decks, investor optics)
-   - **D.U.M.-E** — Founder Morale & Wellness (Burnout shield, celebration of wins, resilience)
-   - **ULTRON** — Reality Check & Tough Love (Vanity metric destruction, brutal market truths)
-6. **Vision Submission** — Quick thesis prompt without tedious business plans (features hands-free Wispr voice recording).
-7. **Multi-Agent Deliberation** — Live sequential deliberation feed and unified Council Directive.
-8. **Startup Evaluation Sheet & Tracking Loop** — Dynamic venture scorecard with a continuous cycle log that records every milestone over time.
+### Open the saved workspace snapshot
 
----
+1. Open the app's welcome page.
+2. Choose **Explore the startup workspace demo**.
+3. Venture Vision opens a sample CleanCity AI startup with a populated overview, roadmap, council discussion, activity history, and advisor conversation.
+4. Use the workspace tabs to browse the snapshot. You can update the sample founder journey and venture evaluation too.
 
-## 🚀 Local Development
+This is the quickest option for a short review. It opens saved sample content, so you can see the main workspace without first running an AI evaluation.
+
+### Walk through the founder flow
+
+1. On the welcome page, choose **Enter Founder Chamber**.
+2. Sign in with any email and password, or choose **Instant 1-Click Founder Demo Access**.
+3. Enter a founder name, venture name, and role. Add your founder journey: career path, support or funding, and time available. These details can be changed later in the workspace.
+4. Continue through the council introduction, then describe a venture idea on the vision screen. You can type your own idea or choose one of the example ideas. If voice input is available in your browser, you can use it too.
+5. Choose **Convene the Council** to get perspectives from the five advisors. When cloud AI is unavailable or not configured, the app can use local Gemma when the browser supports WebGPU, then its built-in Stark fallback.
+6. Fill in the Startup Evaluation Sheet: choose the current stage and update your priority, bottleneck, milestone, runway, and energy. Save the evaluation to open the venture workspace.
+7. In the workspace, use **Overview** to see current standing, **Roadmap** to track stages, **AI Council** to convene again or choose an advisor, and **Talk to an Advisor** for a one-on-one conversation. Return as the venture changes and update the evaluation to keep the advice current.
+
+## What is in the workspace?
+
+- **Overview:** current venture stage, founder energy, runway, priorities, bottleneck, milestone, founder circumstances, and recent activity.
+- **Roadmap:** a visual path from idea validation through MVP, closed beta, and traction or scaling.
+- **AI Council:** bring all five advisor perspectives back to the current venture.
+- **One-on-one advisor:** talk with a selected council member at any point.
+- **Evaluation and history:** save a snapshot of the venture's current state and look back at earlier council cycles.
+
+## Run locally
+
+Requirements: Node.js 20 or later.
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Run local dev server
 npm run dev
+```
 
-# 3. Build for production
+Vite prints a local URL, usually `http://localhost:5173`. To create a production build:
+
+```bash
 npm run build
 ```
 
----
+## AI options
 
-## 🌐 Deploy to Render (Blueprint Deployment)
+- **Gemini cloud models:** configure a Google AI API key in the app's model settings. The app uses its configured Gemini 3 family choices and can fall through its available cloud models.
+- **Gemma in the browser:** local inference uses WebGPU and may need to download model weights the first time. Device and browser support vary.
+- **Stark fallback:** a built-in contextual advisor is available if live model calls cannot run.
 
-This repository includes a pre-configured `render.yaml` Blueprint spec for one-click deployment on [Render](https://render.com):
+The demo workspace snapshot does not need an API key. Live AI responses need a configured cloud key or a browser/device that can run local Gemma; otherwise, the built-in fallback is used.
 
-1. Push this repository to your GitHub account:
-   ```bash
-   git remote add origin https://github.com/<YOUR_GITHUB_USERNAME>/ai-council-os.git
-   git branch -M main
-   git push -u origin main
-   ```
-2. In your Render Dashboard, click **New +** > **Blueprint**.
-3. Connect your new `ai-council-os` repository.
-4. Render will automatically detect `render.yaml`, build the static site via `npm run build`, and host it with full client-side routing rewrites.
+## Deploy to Render
 
----
+This repository includes a `render.yaml` Blueprint for the static web app.
 
-## 🛠️ Tech Stack
+1. Push the repository to GitHub.
+2. In Render, choose **New +** → **Blueprint** and connect the repository.
+3. Render reads `render.yaml`, builds with `npm install && npm run build`, and publishes `dist` with single-page app routing.
+4. Add any required Gemini API key through the Render environment settings if you want cloud AI responses in the deployed app.
 
-- **Framework**: React 18 + Vite 6
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Icons**: Lucide React
-- **Voice Engine**: Web Speech API with live audio waveform simulation
-- **Generative AI**: Built-in Stark Multi-Agent Contextual Engine + optional Google Gemini 2.0 API integration
+## Tech stack
+
+- React 18, TypeScript, and Vite
+- Tailwind CSS and Lucide React
+- Gemini API for optional cloud inference
+- WebLLM for in-browser Gemma inference
+- Built-in Stark contextual fallback

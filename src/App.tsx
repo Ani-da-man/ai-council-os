@@ -921,8 +921,8 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               <Cpu className="w-5 h-5 text-cyan-400 animate-pulse" />
             </div>
             <div>
-              <span className="font-extrabold text-base sm:text-lg tracking-wider bg-gradient-to-r from-cyan-400 via-sky-200 to-indigo-400 bg-clip-text text-transparent">A.I. COUNCIL OS</span>
-              <p className="text-[10px] text-slate-500 font-mono hidden sm:block">Autonomous Founder Intelligence Nexus</p>
+              <span className="font-extrabold text-base sm:text-lg tracking-wider bg-gradient-to-r from-cyan-400 via-sky-200 to-indigo-400 bg-clip-text text-transparent">VENTURE VISION</span>
+              <p className="text-[10px] text-slate-500 font-mono hidden sm:block">Your companion for venture building</p>
             </div>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-3">
@@ -1001,7 +1001,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               </span>
             </h1>
             <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              A.I. Council OS convenes 5 specialized AI advisors powered by dual-active flagship intelligence with zero downtime.
+              Venture Vision is a companion for the long journey of building a venture. It helps founders navigate entrepreneurship, choose their next steps, track progress, and find support as their goals and circumstances change.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto text-left">
@@ -1830,7 +1830,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       )}
 
       <footer className="relative z-10 border-t border-slate-900/80 py-4 text-center text-xs text-slate-600 font-mono">
-        A.I. Council OS | Gemini 3 Family (Active Cloud) + Gemma 2 2B (Active WebLLM) + Stark Engine (Standby) | Built for Founders
+        Venture Vision | Gemini 3 Family + In-Browser Gemma + Stark fallback | Built for Founders
       </footer>
     </div>
   );
