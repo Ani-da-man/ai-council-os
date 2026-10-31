@@ -18,9 +18,8 @@ import { CreateMLCEngine } from '@mlc-ai/web-llm';
 //                      Structured contextual simulation with persona-aware prompts.
 // ==========================================
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-pro';
 const GEMMA_WEBLLM_MODEL = 'gemma-2-2b-it-q4f16_1-MLC';
-const GEMINI_API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // ==========================================
 // TYPES & DATA STRUCTURES
@@ -36,7 +35,7 @@ export type AppStage =
   | 'deliberation'
   | 'evaluation_sheet';
 
-export type IntelligenceTier = 'gemini' | 'gemma_webllm' | 'stark_engine';
+export type IntelligenceTier = string;
 
 export interface CouncilPersona {
   id: string;
@@ -199,9 +198,13 @@ const DEMO_VISIONS = [
 ];
 
 function getTierLabel(tier: IntelligenceTier): { label: string; color: string; dot: string } {
-  if (tier === 'gemini') return { label: 'Gemini 2.0 Flash', color: 'text-cyan-400', dot: 'bg-cyan-400' };
-  if (tier === 'gemma_webllm') return { label: 'Gemma 2 2B (WebLLM)', color: 'text-emerald-400', dot: 'bg-emerald-400' };
-  return { label: 'Stark Engine (Built-in)', color: 'text-amber-400', dot: 'bg-amber-500' };
+  if (tier.includes('2.5-pro')) return { label: 'Gemini 2.5 Pro (Flagship Reasoning)', color: 'text-cyan-400', dot: 'bg-cyan-400' };
+  if (tier.includes('1.5-pro')) return { label: 'Gemini 1.5 Pro (Deep Context)', color: 'text-sky-400', dot: 'bg-sky-400' };
+  if (tier.includes('2.5-flash')) return { label: 'Gemini 2.5 Flash (Balanced)', color: 'text-blue-400', dot: 'bg-blue-400' };
+  if (tier.includes('2.0-flash')) return { label: 'Gemini 2.0 Flash (Fast)', color: 'text-teal-400', dot: 'bg-teal-400' };
+  if (tier.startsWith('gemini') || tier.includes('pro') || tier.includes('flash')) return { label: `${tier} (Custom Model)`, color: 'text-cyan-300', dot: 'bg-cyan-300' };
+  if (tier === 'gemma_webllm') return { label: 'Gemma 2 2B (WebLLM Local)', color: 'text-emerald-400', dot: 'bg-emerald-400' };
+  return { label: 'Stark Engine (Built-in Heuristic)', color: 'text-amber-400', dot: 'bg-amber-500' };
 }
 
 export default function App() {
@@ -223,6 +226,8 @@ export default function App() {
   const [synthesis, setSynthesis] = useState<CouncilSynthesis | null>(null);
   const [activeModel, setActiveModel] = useState<IntelligenceTier | null>(null);
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY') || '');
+  const [geminiModel, setGeminiModel] = useState<string>(() => localStorage.getItem('GEMINI_MODEL') || DEFAULT_GEMINI_MODEL);
+  const [customModelId, setCustomModelId] = useState<string>(() => localStorage.getItem('GEMINI_CUSTOM_MODEL_ID') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
   const webllmEngineRef = useRef<any>(null);
   const [gemmaStatus, setGemmaStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -309,30 +314,39 @@ export default function App() {
   };
 
   // ==========================================
-  // TIER 1: Gemini 2.0 Flash
+  // TIER 1: Google Gemini (2.5 Pro / Flagship Reasoning Model)
   // ==========================================
-  const executeGeminiDeliberation = async (vision: string): Promise<void> => {
-    const prompt = `You are the AI Founders Council (Tony Stark style AI OS).
+  const executeGeminiDeliberation = async (vision: string, modelId: string): Promise<void> => {
+    const prompt = `You are the elite AI Founders Council (Tony Stark style AI OS).
 Founder: ${profile.name} (${profile.role})
 Venture: ${profile.companyName}
 Raw Venture Vision: "${vision}"
 
+Conduct an incisive, world-class founder council deliberation. Each advisor must bring rigorous domain critique and actionable strategy according to their role.
 Return ONLY a valid JSON object (no markdown, no code fences) with exactly this shape:
 {"council":[{"id":"jarvis","thought":"..."},{"id":"friday","thought":"..."},{"id":"edith","thought":"..."},{"id":"dume","thought":"..."},{"id":"ultron","thought":"..."}],"synthesis":{"verdict":"one sentence verdict","actionItems":["action1","action2","action3"],"riskFactor":"Moderate"}}`;
 
-    const res = await fetch(`${GEMINI_API_ENDPOINT}?key=${geminiApiKey}`, {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${geminiApiKey}`;
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7, maxOutputTokens: 1200 } })
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+          maxOutputTokens: 2048
+        }
+      })
     });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Gemini (${modelId}) HTTP ${res.status}`);
     const data = await res.json();
     let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
     const parsed = JSON.parse(text);
     await streamFeedItems(parsed.council || [], 800);
     setSynthesis(parsed.synthesis);
-    setActiveModel('gemini');
+    setActiveModel(modelId);
     autoUpdateEvalSheet(parsed.synthesis?.actionItems?.[0]);
   };
 
@@ -443,10 +457,27 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     setSynthesis(null);
     setActiveModel(null);
 
-    // Tier 1: Gemini
+    // Tier 1: Gemini (Flagship Reasoning Model e.g. 2.5 Pro / Custom, with instant fallback to 2.0 Flash)
     if (geminiApiKey.trim()) {
-      try { await executeGeminiDeliberation(vision); setIsDeliberating(false); return; }
-      catch (err) { console.warn('[Tier 1] Gemini failed:', err); setDeliberationFeed([]); }
+      const primaryModel = geminiModel === 'custom' && customModelId.trim() ? customModelId.trim() : geminiModel;
+      try {
+        await executeGeminiDeliberation(vision, primaryModel);
+        setIsDeliberating(false);
+        return;
+      } catch (err) {
+        console.warn(`[Tier 1] Primary model (${primaryModel}) failed:`, err);
+        if (primaryModel !== 'gemini-2.0-flash') {
+          try {
+            console.info('[Tier 1 Fallback] Attempting secondary gemini-2.0-flash...');
+            await executeGeminiDeliberation(vision, 'gemini-2.0-flash');
+            setIsDeliberating(false);
+            return;
+          } catch (flashErr) {
+            console.warn('[Tier 1 Fallback] gemini-2.0-flash also failed:', flashErr);
+          }
+        }
+        setDeliberationFeed([]);
+      }
     }
 
     // Tier 2: Gemma WebLLM (requires WebGPU)
@@ -873,41 +904,105 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         </div>
       )}
 
-      {/* API KEY MODAL */}
+      {/* API KEY & MODEL CONFIGURATION MODAL */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center space-x-2 text-cyan-400"><Key className="w-5 h-5" /><h3 className="font-bold text-sm uppercase tracking-wider text-white">Intelligence Stack Configuration</h3></div>
-              <button onClick={() => setShowKeyModal(false)} className="text-slate-500 hover:text-slate-300"><X className="w-5 h-5" /></button>
+              <div className="flex items-center space-x-2 text-cyan-400">
+                <Key className="w-5 h-5" />
+                <h3 className="font-bold text-sm uppercase tracking-wider text-white">Intelligence Stack & Model Engine</h3>
+              </div>
+              <button onClick={() => setShowKeyModal(false)} className="text-slate-500 hover:text-slate-300">
+                <X className="w-5 h-5" />
+              </button>
             </div>
+
             <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs font-mono">
               {[
-                { label: 'Tier 1: Gemini 2.0 Flash', active: !!geminiApiKey, status: geminiApiKey ? 'Key configured' : 'No key', c: 'text-cyan-400', d: geminiApiKey ? 'bg-cyan-400' : 'bg-slate-600' },
-                { label: 'Tier 2: Gemma 2 2B (WebLLM)', active: gemmaStatus === 'ready', status: gemmaStatus === 'ready' ? 'In-browser ready' : gemmaStatus === 'loading' ? 'Loading...' : 'Not loaded', c: 'text-emerald-400', d: gemmaStatus === 'ready' ? 'bg-emerald-400' : 'bg-slate-600' },
-                { label: 'Tier 3: Stark Engine', active: true, status: 'Always active', c: 'text-amber-400', d: 'bg-amber-500' }
+                { label: `Tier 1: ${geminiModel === 'custom' && customModelId ? customModelId : geminiModel}`, active: !!geminiApiKey, status: geminiApiKey ? 'Key active' : 'No key', c: 'text-cyan-400', d: geminiApiKey ? 'bg-cyan-400' : 'bg-slate-600' },
+                { label: 'Tier 2: Gemma 2 2B (WebLLM Local)', active: gemmaStatus === 'ready', status: gemmaStatus === 'ready' ? 'In-browser ready' : gemmaStatus === 'loading' ? 'Loading...' : 'Ready on fallback', c: 'text-emerald-400', d: gemmaStatus === 'ready' ? 'bg-emerald-400' : 'bg-slate-600' },
+                { label: 'Tier 3: Stark Engine (Heuristic)', active: true, status: 'Always active', c: 'text-amber-400', d: 'bg-amber-500' }
               ].map((t, i) => (
                 <div key={i} className="flex items-center justify-between">
-                  <span className={`flex items-center space-x-1.5 ${t.c}`}><span className={`w-1.5 h-1.5 rounded-full ${t.d}`} /><span>{t.label}</span></span>
+                  <span className={`flex items-center space-x-1.5 ${t.c}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${t.d}`} />
+                    <span>{t.label}</span>
+                  </span>
                   <span className={t.active ? 'text-emerald-400' : 'text-slate-500'}>{t.status}</span>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">Enter your Google Gemini API key (AQ. or AIzaSy format from AI Studio) to enable Tier 1. Stored only in localStorage — never in source code or any external server.</p>
+
+            {/* Model Selection Dropdown */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center justify-between">
+                <span>Primary Reasoning Model</span>
+                <span className="text-[10px] text-cyan-400 lowercase font-mono">Flagship Tier 1</span>
+              </label>
+              <select
+                value={geminiModel}
+                onChange={e => setGeminiModel(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+              >
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Flagship Reasoning & Analysis - Recommended)</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Extended Context & Complex Reasoning)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Next-Gen High Speed & Balanced)</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash (Ultra-Fast Generation)</option>
+                <option value="custom">Custom Model ID (e.g. gemini-3.1-pro or preview checkpoints)</option>
+              </select>
+            </div>
+
+            {geminiModel === 'custom' && (
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 font-mono">Custom Model Identifier</label>
+                <input
+                  type="text"
+                  placeholder="e.g. gemini-3.1-pro or gemini-2.0-pro-exp"
+                  value={customModelId}
+                  onChange={e => setCustomModelId(e.target.value)}
+                  className="w-full bg-slate-950 border border-cyan-500/50 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-500">Will be routed to Google AI Studio v1beta endpoint with automatic fallback to 2.0 Flash.</p>
+              </div>
+            )}
+
             <div>
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono">Gemini API Key</label>
-              <input type="password" placeholder="AQ.Ab8RN... or AIzaSy..." value={geminiApiKey} onChange={e => setGeminiApiKey(e.target.value)} className="w-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono" />
+              <input
+                type="password"
+                placeholder="AQ.Ab8RN... or AIzaSy..."
+                value={geminiApiKey}
+                onChange={e => setGeminiApiKey(e.target.value)}
+                className="w-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+              />
             </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Stored locally in your browser (localStorage). Never bundled into git source code or transmitted to external third-party servers.
+            </p>
             <div className="flex justify-end space-x-3 pt-2">
-              <button type="button" onClick={() => setShowKeyModal(false)} className="px-4 py-2 text-xs text-slate-400 hover:text-slate-200">Cancel</button>
-              <button type="button" onClick={() => { localStorage.setItem('GEMINI_API_KEY', geminiApiKey); setShowKeyModal(false); }} className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs">Save Key</button>
+              <button type="button" onClick={() => setShowKeyModal(false)} className="px-4 py-2 text-xs text-slate-400 hover:text-slate-200">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('GEMINI_API_KEY', geminiApiKey);
+                  localStorage.setItem('GEMINI_MODEL', geminiModel);
+                  localStorage.setItem('GEMINI_CUSTOM_MODEL_ID', customModelId);
+                  setShowKeyModal(false);
+                }}
+                className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"
+              >
+                Save Configuration
+              </button>
             </div>
           </div>
         </div>
       )}
 
       <footer className="relative z-10 border-t border-slate-900/80 py-4 text-center text-xs text-slate-600 font-mono">
-        A.I. Council OS | Gemini 2.0 Flash + Gemma 2 2B (WebLLM) + Stark Engine | Built for Founders
+        A.I. Council OS | Gemini 2.5 Pro (Flagship Reasoning) + Gemma 2 2B (WebLLM) + Stark Engine | Built for Founders
       </footer>
     </div>
   );
