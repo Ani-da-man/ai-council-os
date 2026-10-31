@@ -62,6 +62,9 @@ export interface FounderProfile {
   companyName: string;
   isAuthenticated: boolean;
   email: string;
+  careerPath: string;
+  supportSource: string;
+  hoursPerWeek: string;
 }
 
 export interface CouncilThought {
@@ -86,6 +89,29 @@ export interface EvaluationSheet {
   runwayMonths: string;
   confidenceScore: number;
   lastUpdated: string;
+}
+
+const DEFAULT_FOUNDER_PROFILE: FounderProfile = {
+  name: '', role: 'CEO & Co-Founder', companyName: '', isAuthenticated: false, email: '',
+  careerPath: 'First-time founder', supportSource: 'Personal savings / bootstrapping', hoursPerWeek: 'Full-time'
+};
+
+function normalizeFounderProfile(value: Partial<FounderProfile> | null | undefined): FounderProfile {
+  return { ...DEFAULT_FOUNDER_PROFILE, ...(value || {}) };
+}
+
+function getFounderJourneyContext(profile: FounderProfile, evaluation: EvaluationSheet): string {
+  return [
+    `Founder journey: ${profile.careerPath || 'Not specified'}`,
+    `Support and funding: ${profile.supportSource || 'Not specified'}`,
+    `Time available: ${profile.hoursPerWeek || 'Not specified'}`,
+    `Venture stage: ${evaluation.currentStage || 'Not specified'}`,
+    `Runway: ${evaluation.runwayMonths || 'Not specified'}`,
+    `Current priority: ${evaluation.topPriority || 'Not specified'}`,
+    `Bottleneck: ${evaluation.criticalBottleneck || 'Not specified'}`,
+    `Next milestone: ${evaluation.nextMilestone || 'Not specified'}`,
+    `Founder energy: ${evaluation.confidenceScore}/10`
+  ].join('\n');
 }
 
 export interface VentureCycleLog {
@@ -216,10 +242,15 @@ function getTierLabel(tier: IntelligenceTier): { label: string; color: string; d
 // DYNAMIC CONTEXT-AWARE STARK HEURISTIC
 // (Standby Fallback only — tailor-generated from founder vision)
 // ==========================================
-function generateDynamicHeuristics(vision: string, profile: FounderProfile): { council: CouncilThought[]; synthesis: CouncilSynthesis } {
+function generateDynamicHeuristics(vision: string, profile: FounderProfile, evaluation: EvaluationSheet): { council: CouncilThought[]; synthesis: CouncilSynthesis } {
   const name = profile.name || 'Founder';
   const venture = profile.companyName || 'your venture';
   const vLower = vision.toLowerCase();
+  const journeyContext = getFounderJourneyContext(profile, evaluation);
+  const capacity = profile.hoursPerWeek === 'Part-time (under 10 hours)' ? 'Keep the plan to one small, high-signal task this week; do not assume daily founder availability.'
+    : profile.hoursPerWeek === 'Part-time (10–20 hours)' ? 'Fit the plan into a focused part-time sprint and preserve space for existing work or study.'
+      : 'Size the plan to the current stage, resources, and runway rather than defaulting to aggressive growth.';
+  const journeyNote = `${capacity} Founder context: ${profile.careerPath}; support: ${profile.supportSource}; stage: ${evaluation.currentStage}; runway: ${evaluation.runwayMonths}.`;
 
   // Detect industry domain
   let domain = 'Technology & Software';
@@ -253,45 +284,45 @@ function generateDynamicHeuristics(vision: string, profile: FounderProfile): { c
       id: 'jarvis',
       personaName: 'J.A.R.V.I.S.',
       role: 'Chief of Staff & Governance',
-      thought: `${name}, for ${venture} in ${domain}, legal structure dictates leverage. Before customer pilots, ensure IP assignment agreements, clear licensing boundaries, and lock your corporate entity. Mitigate ${specificRisk} in your earliest legal agreements.`,
+      thought: `${name}, for ${venture} in ${domain}, first resolve only the governance and IP questions that matter for the current ${evaluation.currentStage} stage; avoid premature incorporation complexity. ${journeyNote} Check local requirements with a qualified professional where needed.`,
       status: 'pending'
     },
     {
       id: 'friday',
       personaName: 'F.R.I.D.A.Y.',
       role: 'Product & Tech Lead',
-      thought: `Velocity is our armor. Do not over-engineer the complete architecture for ${venture}. Strip this vision down to ${techSlice}. Ship that to 20 committed pilot users in under two weeks. Everything else is technical debt in disguise.`,
+      thought: `For ${venture}, strip the vision down to ${techSlice} and validate it against the current bottleneck: ${evaluation.criticalBottleneck}. ${capacity} Use the next milestone (${evaluation.nextMilestone}) as the test of progress, not feature count.`,
       status: 'pending'
     },
     {
       id: 'edith',
       personaName: 'E.D.I.T.H.',
       role: 'Strategy & Investor Lens',
-      thought: `Investors reviewing ${venture} will interrogate defensibility. Why can't an incumbent copy this in a quarter? Define whether your moat is proprietary workflow telemetry, exclusive distribution, or network effects. The initial pricing model must demonstrate positive gross margins.`,
+      thought: `At ${evaluation.currentStage}, ${venture} should prioritize evidence before fundraising polish: test the buyer, willingness to pay, and one credible differentiator. With ${evaluation.runwayMonths} runway and ${profile.supportSource} support, choose a capital path that fits rather than assuming institutional investment is the next step.`,
       status: 'pending'
     },
     {
       id: 'dume',
       personaName: 'D.U.M.-E',
       role: 'Founder Morale & Wellness',
-      thought: `${name}, building in ${domain} is audacious. Take a deep breath. You have articulated a real market gap for ${venture}. Protect your focus, celebrate this milestone, stay hydrated, and treat the upcoming sprint as a marathon. We have your back.`,
+      thought: `${name}, your path as a ${profile.careerPath.toLowerCase()} is allowed to look different from anyone else's. Your energy is ${evaluation.confidenceScore}/10; ${evaluation.confidenceScore < 5 ? 'reduce the load and protect recovery before adding commitments.' : 'celebrate this progress while keeping a sustainable pace.'} We have your back.`,
       status: 'pending'
     },
     {
       id: 'ultron',
       personaName: 'ULTRON',
       role: 'Reality Check & Tough Love',
-      thought: `Let us be brutally candid: ${venture} will perish if you mistake founder enthusiasm for demand. Stop writing spec documents. Get 5 target customers to sign an LOI or prepay before you build complex integrations. ${specificRisk} will crush you if you build in a vacuum.`,
+      thought: `The main risk for ${venture} is ${specificRisk}. Validate it with the smallest credible test that fits ${profile.hoursPerWeek} availability and ${profile.supportSource} resources. Do not take on spend or commitments that threaten ${evaluation.runwayMonths} runway before confirming demand.`,
       status: 'pending'
     }
   ];
 
   const synthesis: CouncilSynthesis = {
-    verdict: `Validate urgent willingness-to-pay for ${venture} immediately before expanding scope beyond ${techSlice}.`,
+    verdict: `For ${venture} at ${evaluation.currentStage}, validate the riskiest assumption with a next step sized to ${profile.hoursPerWeek} availability and ${evaluation.runwayMonths} runway.`,
     actionItems: [
-      `1. Scope-cut: Ship ${techSlice} only to 10 handpicked target users.`,
-      `2. Conduct 5 deep-dive user validation interviews focusing on ${specificRisk}.`,
-      `3. Formalize entity governance and intellectual property ownership for ${venture}.`
+      `1. ${capacity}`,
+      `2. Run a small validation of ${specificRisk} before spending beyond current support.`,
+      `3. Make the next milestone (${evaluation.nextMilestone}) the checkpoint for the following decision.`
     ],
     riskFactor: domain === 'DeepTech & Hardware' || domain === 'HealthTech & Bio' ? 'High' : 'Moderate'
   };
@@ -311,9 +342,9 @@ export default function App() {
 
   const [profile, setProfile] = useState<FounderProfile>(() => {
     try {
-      return JSON.parse(localStorage.getItem('COUNCIL_FOUNDER_PROFILE') || '{}');
+      return normalizeFounderProfile(JSON.parse(localStorage.getItem('COUNCIL_FOUNDER_PROFILE') || '{}'));
     } catch {
-      return { name: '', role: 'CEO & Co-Founder', companyName: '', isAuthenticated: false, email: '' };
+      return DEFAULT_FOUNDER_PROFILE;
     }
   });
 
@@ -551,12 +582,17 @@ export default function App() {
   // ENGINE 1: Google Gemini (Resilient Multi-Model Cascade)
   // ==========================================
   const callSingleGeminiModel = async (vision: string, modelId: string): Promise<any> => {
+    const journeyContext = getFounderJourneyContext(profile, evalSheet);
     const prompt = `You are the elite AI Founders Council (Tony Stark style AI OS).
 Founder: ${profile.name || 'Founder'} (${profile.role || 'CEO'})
 Venture: ${profile.companyName || 'The Venture'}
 Raw Venture Vision: "${vision}"
 
+FOUNDER JOURNEY AND LIVE VENTURE CONTEXT (use this to personalize every recommendation):
+${journeyContext}
+
 Conduct an incisive, world-class founder council deliberation. Each advisor must bring rigorous domain critique and actionable strategy according to their role.
+Adapt recommendations to this founder's actual career path, resources, support, time capacity, energy, runway, venture stage, and current bottleneck. Do not assume every founder is full-time, funded, experienced, or ready to scale. Recommend a realistic next step for this exact situation; distinguish urgent actions from later-stage work. If context is missing, state the assumption briefly or ask one useful question instead of inventing facts. Be supportive without diluting honest risks.
 Return ONLY a valid JSON object (no markdown, no code fences) with exactly this shape:
 {"council":[{"id":"jarvis","thought":"..."},{"id":"friday","thought":"..."},{"id":"edith","thought":"..."},{"id":"dume","thought":"..."},{"id":"ultron","thought":"..."}],"synthesis":{"verdict":"one sentence verdict","actionItems":["action1","action2","action3"],"riskFactor":"Moderate"}}`;
 
@@ -645,12 +681,14 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
 
   const executeGemmaDeliberation = async (vision: string): Promise<void> => {
     const engine = await initWebLLMEngine();
+    const journeyContext = getFounderJourneyContext(profile, evalSheet);
+    const adaptiveGuidance = `Adapt all advice to this founder's real constraints and journey. Do not assume full-time availability, outside funding, prior startup experience, or readiness to scale. Recommend an achievable next move for the current stage and resources; call out assumptions or ask one concise question when a key fact is missing.\n\nFounder and venture context:\n${journeyContext}`;
     const personaPrompts = [
-      { id: 'jarvis', system: 'You are J.A.R.V.I.S., an AI governance advisor for startup founders. Give structured advice on legal compliance, entity formation, cap tables, and operational execution. Be concise and formal.' },
-      { id: 'friday', system: 'You are F.R.I.D.A.Y., an AI product & technical advisor. Give direct advice on MVP architecture, feature scope, technical velocity. Be blunt and practical.' },
-      { id: 'edith', system: 'You are E.D.I.T.H., an AI strategy & investor relations advisor. Evaluate the venture from a VC perspective: TAM, competitive moats, unit economics, pitch defensibility. Be analytical.' },
-      { id: 'dume', system: 'You are D.U.M.-E, an empathetic AI wellness companion for founders. Provide warm encouragement, celebrate progress, remind about work-life balance. Be warm and supportive.' },
-      { id: 'ultron', system: 'You are ULTRON, a brutally honest AI advisor. Identify the single greatest existential threat to this startup in 2-3 sentences. Be blunt and direct.' }
+      { id: 'jarvis', system: `You are J.A.R.V.I.S., an AI governance advisor for startup founders. Give structured advice on legal compliance, entity formation, cap tables, and operational execution. Be concise and formal. ${adaptiveGuidance}` },
+      { id: 'friday', system: `You are F.R.I.D.A.Y., an AI product & technical advisor. Give direct advice on MVP architecture, feature scope, technical velocity. Be blunt and practical. ${adaptiveGuidance}` },
+      { id: 'edith', system: `You are E.D.I.T.H., an AI strategy & investor relations advisor. Evaluate the venture from a VC perspective: TAM, competitive moats, unit economics, pitch defensibility. Be analytical. ${adaptiveGuidance}` },
+      { id: 'dume', system: `You are D.U.M.-E, an empathetic AI wellness companion for founders. Provide warm encouragement, celebrate progress, remind about work-life balance. Be warm and supportive. ${adaptiveGuidance}` },
+      { id: 'ultron', system: `You are ULTRON, a brutally honest AI advisor. Identify the single greatest existential threat to this startup in 2-3 sentences. Be blunt and direct. ${adaptiveGuidance}` }
     ];
 
     for (const p of personaPrompts) {
@@ -674,7 +712,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     const synthReply = await engine.chat.completions.create({
       messages: [
         { role: 'system', content: 'Output ONLY valid JSON (no markdown): {"verdict":"one sentence","actionItems":["a1","a2","a3"],"riskFactor":"Moderate"}' },
-        { role: 'user', content: `Summarize a council deliberation on this startup vision: "${vision}"` }
+        { role: 'user', content: `Summarize this council deliberation and the founder-specific context. Choose a realistic verdict, three actions sized to available time and runway, and an honest risk rating. Vision: "${vision}". Context: ${journeyContext}` }
       ],
       temperature: 0.5,
       max_tokens: 180
@@ -686,7 +724,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       setSynthesis(parsed);
       autoUpdateEvalSheet(parsed.actionItems?.[0]);
     } catch {
-      const fallbackSynth = generateDynamicHeuristics(vision, profile).synthesis;
+      const fallbackSynth = generateDynamicHeuristics(vision, profile, evalSheet).synthesis;
       setSynthesis(fallbackSynth);
       autoUpdateEvalSheet(fallbackSynth.actionItems?.[0]);
     }
@@ -704,7 +742,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
   // ENGINE 3: Dynamic Stark Engine (Safety Fallback)
   // ==========================================
   const executeStarkEngine = async (vision: string): Promise<void> => {
-    const { council, synthesis: generatedSynthesis } = generateDynamicHeuristics(vision, profile);
+    const { council, synthesis: generatedSynthesis } = generateDynamicHeuristics(vision, profile, evalSheet);
     for (const t of council) {
       setActiveSpeakerId(t.id);
       await new Promise(r => setTimeout(r, 750));
@@ -812,7 +850,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       lastUpdated: new Date().toLocaleDateString()
     };
     const demoVerdict = 'Prove that city teams act faster and spend less when road and waste hazards are detected early.';
-    setProfile({ name: 'Demo Founder', role: 'CEO & Co-Founder', companyName: 'CleanCity AI', isAuthenticated: true, email: 'demo@example.com' });
+    setProfile(normalizeFounderProfile({ name: 'Demo Founder', role: 'CEO & Co-Founder', companyName: 'CleanCity AI', isAuthenticated: true, email: 'demo@example.com', careerPath: 'Professional transitioning from a full-time job', supportSource: 'Personal savings / bootstrapping', hoursPerWeek: 'Full-time' }));
     setVisionText(demoVision);
     setEvalSheet(demoEvaluation);
     setSynthesis({ verdict: demoVerdict, actionItems: ['Run a focused pilot with three municipal teams.', 'Track precision, response time, and cost per resolved issue.', 'Interview operators weekly and remove false-positive friction.'], riskFactor: 'Moderate' });
@@ -842,6 +880,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     const text = advisorInput.trim();
     if (!text || advisorBusy) return;
     const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0];
+    const journeyContext = getFounderJourneyContext(profile, evalSheet);
     const thread = [...(advisorChats[advisor.id] || []), { role: 'founder' as const, text }];
     setAdvisorChats(prev => ({ ...prev, [advisor.id]: thread }));
     setAdvisorInput('');
@@ -852,7 +891,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         const model = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'].includes(geminiModel) ? geminiModel : DEFAULT_GEMINI_MODEL;
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Founder: ${profile.name}. Venture: ${profile.companyName}. Venture context: ${visionText}. Reply directly to the founder with specific, practical help in a supportive voice.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
+          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Founder: ${profile.name}. Venture: ${profile.companyName}. Venture vision: ${visionText}.\n\nFounder journey and current state:\n${journeyContext}\n\nAdapt to this person's career path, available time, funding/support, runway, stage, current priority, and energy. Avoid generic advice or assuming full-time work, venture funding, or prior experience. Give practical help sized to their real circumstances; if critical context is missing, ask one concise question. Reply directly and supportively.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
         });
         if (!response.ok) throw new Error(`Gemini returned HTTP ${response.status}`);
         const result = await response.json();
@@ -860,7 +899,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       }
       if (!reply && typeof (navigator as any).gpu !== 'undefined') {
         const engine = await initWebLLMEngine();
-        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Give practical founder advice.` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 350 });
+        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Give practical founder advice adapted to their actual career path, resources, available time, runway, stage, current priority, and energy. Do not assume full-time availability or venture funding; size advice to their circumstances and ask one concise question if a critical fact is missing.\n\nFounder and venture context:\n${journeyContext}\nVision: ${visionText}` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 350 });
         reply = result.choices[0]?.message?.content?.trim() || '';
       }
       if (!reply) reply = `${advisor.name} is ready to help with ${advisor.expertise[0].toLowerCase()}. Configure a Gemini key or enable WebGPU for a live AI reply. For now, frame the decision, the evidence you have, and what you need to decide next.`;
@@ -1115,6 +1154,32 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
                   placeholder="e.g. Arc Reactor Labs (optional)"
                   className="w-full mt-1.5 bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
                 />
+              </div>
+              <div className="rounded-xl border border-indigo-900/70 bg-indigo-950/20 p-4 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-indigo-200">Your founder journey</h3>
+                  <p className="text-[11px] text-slate-400 mt-1">This helps the council tailor its advice to your path and capacity. You can change it as things evolve.</p>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Where are you in your founder journey?</label>
+                  <select value={profile.careerPath || DEFAULT_FOUNDER_PROFILE.careerPath} onChange={e => setProfile({ ...profile, careerPath: e.target.value })} className="w-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200">
+                    {['First-time founder', 'Professional transitioning from a full-time job', 'College student / campus founder', 'Building alongside another job', 'Repeat founder', 'Other path'].map(option => <option key={option}>{option}</option>)}
+                  </select>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Primary support / funding</label>
+                    <select value={profile.supportSource || DEFAULT_FOUNDER_PROFILE.supportSource} onChange={e => setProfile({ ...profile, supportSource: e.target.value })} className="w-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200">
+                      {['Personal savings / bootstrapping', 'College / entrepreneurship cell', 'Job income / severance', 'Grants / incubator', 'Revenue from customers', 'Angel / venture funding', 'Mixed or other'].map(option => <option key={option}>{option}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Time available</label>
+                    <select value={profile.hoursPerWeek || DEFAULT_FOUNDER_PROFILE.hoursPerWeek} onChange={e => setProfile({ ...profile, hoursPerWeek: e.target.value })} className="w-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200">
+                      {['Part-time (under 10 hours)', 'Part-time (10–20 hours)', 'Part-time (20–30 hours)', 'Full-time'].map(option => <option key={option}>{option}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
               <button
                 type="submit"
@@ -1569,6 +1634,16 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
                   <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5"><div className="text-[10px] uppercase font-mono text-slate-500">Founder energy</div><div className="text-3xl font-black text-yellow-300 mt-1">{evalSheet.confidenceScore}<span className="text-sm text-slate-500"> / 10</span></div><div className="h-1.5 bg-slate-800 rounded-full mt-3"><div className="h-full bg-yellow-400 rounded-full" style={{ width: `${evalSheet.confidenceScore * 10}%` }} /></div></div>
                   <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5"><div className="text-[10px] uppercase font-mono text-slate-500">Runway estimate</div><div className="text-lg font-bold text-white mt-2">{evalSheet.runwayMonths}</div><div className="text-xs text-slate-500 mt-2">Update this in your evaluation snapshot</div></div>
                 </div>
+                <section className="rounded-2xl bg-slate-900/70 border border-indigo-900/70 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-4"><div><h2 className="font-bold text-white">Founder journey & capacity</h2><p className="text-xs text-slate-500 mt-1">The council uses these details to size recommendations to your real life.</p></div><span className="text-[10px] text-indigo-300">Saved automatically</span></div>
+                  <div className="grid md:grid-cols-3 gap-3">
+                    {([
+                      ['Career path', 'careerPath', ['First-time founder', 'Professional transitioning from a full-time job', 'College student / campus founder', 'Building alongside another job', 'Repeat founder', 'Other path']],
+                      ['Support / funding', 'supportSource', ['Personal savings / bootstrapping', 'College / entrepreneurship cell', 'Job income / severance', 'Grants / incubator', 'Revenue from customers', 'Angel / venture funding', 'Mixed or other']],
+                      ['Time available', 'hoursPerWeek', ['Part-time (under 10 hours)', 'Part-time (10–20 hours)', 'Part-time (20–30 hours)', 'Full-time']]
+                    ] as [string, 'careerPath' | 'supportSource' | 'hoursPerWeek', string[]][]).map(([label, key, options]) => <label key={key} className="text-[10px] uppercase tracking-wider font-mono text-slate-500">{label}<select value={profile[key] || DEFAULT_FOUNDER_PROFILE[key]} onChange={event => setProfile(prev => ({ ...prev, [key]: event.target.value }))} className="w-full mt-1.5 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-xs normal-case tracking-normal font-sans text-slate-200">{options.map(option => <option key={option}>{option}</option>)}</select></label>)}
+                  </div>
+                </section>
                 <div className="grid lg:grid-cols-[1.2fr_.8fr] gap-4">
                   <section className="rounded-2xl bg-slate-900/80 border border-cyan-900/70 p-5 space-y-4">
                     <div className="flex items-center gap-2 text-cyan-300"><Target className="w-4 h-4"/><h2 className="font-bold">Your focus right now</h2></div>
