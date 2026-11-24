@@ -6,6 +6,7 @@ import {
   CheckCircle2, ArrowRight, X, History, AlertCircle, Download, Check,
   LayoutDashboard, Map, MessageCircle, Users, Target
 } from 'lucide-react';
+import { retrieveVentureGuidance, type VentureAdvisorId } from './venturePlaybook';
 
 // ==========================================
 // INTELLIGENCE STACK CONFIGURATION
@@ -322,6 +323,17 @@ function generateDynamicHeuristics(vision: string, profile: FounderProfile, eval
     }
   ];
 
+  const groundedThoughts = thoughts.map(thought => {
+    const practice = retrieveVentureGuidance({
+      question: `${vision}\n${evaluation.topPriority} ${evaluation.criticalBottleneck}`,
+      ventureContext: journeyNote,
+      advisorId: thought.id as VentureAdvisorId,
+      stage: evaluation.currentStage,
+      limit: 1
+    });
+    return { ...thought, thought: `${thought.thought}\n\nUseful venture practice: ${practice}` };
+  });
+
   const synthesis: CouncilSynthesis = {
     verdict: `For ${venture} at ${evaluation.currentStage}, validate the riskiest assumption with a next step sized to ${profile.hoursPerWeek} availability and ${evaluation.runwayMonths} runway.`,
     actionItems: [
@@ -332,7 +344,7 @@ function generateDynamicHeuristics(vision: string, profile: FounderProfile, eval
     riskFactor: domain === 'DeepTech & Hardware' || domain === 'HealthTech & Bio' ? 'High' : 'Moderate'
   };
 
-  return { council: thoughts, synthesis };
+  return { council: groundedThoughts, synthesis };
 }
 
 export default function App() {
@@ -588,8 +600,11 @@ export default function App() {
   // ==========================================
   const callSingleGeminiModel = async (vision: string, modelId: string): Promise<any> => {
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
-    const personaVoiceGuides = COUNCIL_PERSONAS.map(persona => `${persona.id} (${persona.name}): ${persona.voiceGuide}`).join('\n');
-    const prompt = `You are the elite AI Founders Council (Tony Stark style AI OS).
+    const personaVoiceGuides = COUNCIL_PERSONAS.map(persona => {
+      const playbook = retrieveVentureGuidance({ question: vision, ventureContext: journeyContext, advisorId: persona.id as VentureAdvisorId, stage: evalSheet.currentStage, limit: 2 });
+      return `${persona.id} (${persona.name}) voice: ${persona.voiceGuide}\n${persona.id} venture guidance:\n${playbook}`;
+    }).join('\n\n');
+    const prompt = `You are the Venture Vision founder council.
 Founder: ${profile.name || 'Founder'} (${profile.role || 'CEO'})
 Venture: ${profile.companyName || 'The Venture'}
 Raw Venture Vision: "${vision}"
@@ -601,6 +616,7 @@ Conduct an incisive, world-class founder council deliberation. Each advisor must
 Keep the five voices distinct. Follow these voice guides for tone, reasoning, and boundaries:
 ${personaVoiceGuides}
 Adapt recommendations to this founder's actual career path, resources, support, time capacity, energy, runway, venture stage, and current bottleneck. Do not assume every founder is full-time, funded, experienced, or ready to scale. Recommend a realistic next step for this exact situation; distinguish urgent actions from later-stage work. If context is missing, state the assumption briefly or ask one useful question instead of inventing facts. Be supportive without diluting honest risks.
+Give a clear recommendation and the reason for it. Be confident about well-established startup practices, but label assumptions and uncertainty about this founder or market. Never invent statistics, customer evidence, laws, or citations. Flag legal, tax, investment, and regulated-industry questions for qualified professional review.
 Return ONLY a valid JSON object (no markdown, no code fences) with exactly this shape:
 {"council":[{"id":"jarvis","thought":"..."},{"id":"friday","thought":"..."},{"id":"edith","thought":"..."},{"id":"dume","thought":"..."},{"id":"ultron","thought":"..."}],"synthesis":{"verdict":"one sentence verdict","actionItems":["action1","action2","action3"],"riskFactor":"Moderate"}}`;
 
@@ -690,10 +706,10 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
   const executeGemmaDeliberation = async (vision: string): Promise<void> => {
     const engine = await initWebLLMEngine();
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
-    const adaptiveGuidance = `Adapt all advice to this founder's real constraints and journey. Do not assume full-time availability, outside funding, prior startup experience, or readiness to scale. Recommend an achievable next move for the current stage and resources; call out assumptions or ask one concise question when a key fact is missing.\n\nFounder and venture context:\n${journeyContext}`;
+    const adaptiveGuidance = `Adapt all advice to this founder's real constraints and journey. Do not assume full-time availability, outside funding, prior startup experience, or readiness to scale. Recommend an achievable next move for the current stage and resources; call out assumptions or ask one concise question when a key fact is missing. Give clear recommendations based on sound general practice, but label uncertainty about this specific company. Never invent statistics, evidence, laws, or citations. Flag legal, tax, investment, and regulated-industry questions for qualified professional review.\n\nFounder and venture context:\n${journeyContext}`;
     const personaPrompts = COUNCIL_PERSONAS.map(persona => ({
       id: persona.id,
-      system: `You are ${persona.name}, ${persona.role}. Your focus is ${persona.expertise.join(', ')}. ${persona.voiceGuide} Stay in your own lane; offer your distinct perspective in 2-3 sentences. ${adaptiveGuidance}`
+      system: `You are ${persona.name}, ${persona.role}. Your focus is ${persona.expertise.join(', ')}. ${persona.voiceGuide} Stay in your own lane; offer your distinct perspective in 2-3 sentences. ${adaptiveGuidance}\n\nRelevant venture playbook:\n${retrieveVentureGuidance({ question: vision, ventureContext: journeyContext, advisorId: persona.id as VentureAdvisorId, stage: evalSheet.currentStage, limit: 2 })}`
     }));
 
     for (const p of personaPrompts) {
@@ -891,6 +907,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     if (!text || advisorBusy) return;
     const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0];
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
+    const ventureGuidance = retrieveVentureGuidance({ question: `${text}\n${visionText}`, ventureContext: journeyContext, advisorId: advisor.id as VentureAdvisorId, stage: evalSheet.currentStage, limit: 3 });
     const thread = [...(advisorChats[advisor.id] || []), { role: 'founder' as const, text }];
     setAdvisorChats(prev => ({ ...prev, [advisor.id]: thread }));
     setAdvisorInput('');
@@ -901,7 +918,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         const model = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'].includes(geminiModel) ? geminiModel : DEFAULT_GEMINI_MODEL;
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nFounder: ${profile.name}. Venture: ${profile.companyName}. Venture vision: ${visionText}.\n\nFounder journey and current state:\n${journeyContext}\n\nAdapt to this person's career path, available time, funding/support, runway, stage, current priority, and energy. Avoid generic advice or assuming full-time work, venture funding, or prior experience. Give practical help sized to their real circumstances; if critical context is missing, ask one concise question. Keep your own voice distinct while replying directly.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
+          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nFounder: ${profile.name}. Venture: ${profile.companyName}. Venture vision: ${visionText}.\n\nFounder journey and current state:\n${journeyContext}\n\nRelevant venture playbook:\n${ventureGuidance}\n\nAdapt to this person's career path, available time, funding/support, runway, stage, current priority, and energy. Avoid generic advice or assuming full-time work, venture funding, or prior experience. Give practical help sized to their real circumstances; if critical context is missing, ask one concise question. Keep your own voice distinct while replying directly. Distinguish established principles from assumptions about this particular company. Do not invent facts, statistics, or citations. Flag legal, tax, investment, and regulated-industry questions for qualified professional review.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
         });
         if (!response.ok) throw new Error(`Gemini returned HTTP ${response.status}`);
         const result = await response.json();
@@ -909,7 +926,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       }
       if (!reply && typeof (navigator as any).gpu !== 'undefined') {
         const engine = await initWebLLMEngine();
-        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nGive practical founder advice adapted to their actual career path, resources, available time, runway, stage, current priority, and energy. Do not assume full-time availability or venture funding; size advice to their circumstances and ask one concise question if a critical fact is missing. Keep your own voice distinct.\n\nFounder and venture context:\n${journeyContext}\nVision: ${visionText}` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 350 });
+        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nGive practical founder advice adapted to their actual career path, resources, available time, runway, stage, current priority, and energy. Do not assume full-time availability or venture funding; size advice to their circumstances and ask one concise question if a critical fact is missing. Keep your own voice distinct. Distinguish established principles from assumptions about this company. Do not invent facts, statistics, or citations. Flag legal, tax, investment, and regulated-industry questions for qualified professional review.\n\nFounder and venture context:\n${journeyContext}\nVision: ${visionText}\n\nRelevant venture playbook:\n${ventureGuidance}` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 550 });
         reply = result.choices[0]?.message?.content?.trim() || '';
       }
       if (!reply) reply = `${advisor.name} is ready to help with ${advisor.expertise[0].toLowerCase()}. Configure a Gemini key or enable WebGPU for a live AI reply. For now, frame the decision, the evidence you have, and what you need to decide next.`;

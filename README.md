@@ -56,6 +56,12 @@ npm run build
 - **Gemma in the browser:** local inference uses WebGPU and may need to download model weights the first time. Device and browser support vary.
 - **Stark fallback:** a built-in contextual advisor is available if live model calls cannot run.
 
+## How the advisors give venture guidance
+
+Each council member has a distinct voice, reasoning style, and role. Before responding, Gemini and Gemma receive a small set of relevant notes from the Venture Vision playbook in `src/venturePlaybook.ts`. It covers customer discovery, testing an MVP, markets and sales, pricing, cash and runway, funding, metrics, teams, legal and IP risks, AI and deep-tech products, founder sustainability, and decision-making. Notes are selected for the founder's question, venture stage, and advisor role. The same playbook also informs the Stark fallback.
+
+This is prompt-time guidance: the app retrieves relevant knowledge for each response. It does not update the underlying model weights. Advisors are instructed to distinguish general practices from assumptions about a particular company, avoid inventing facts or statistics, and flag high-stakes legal, tax, investment, or regulated-industry decisions for qualified review.
+
 The demo workspace snapshot does not need an API key. Live Gemini responses require your configured Gemini key; local Gemma can run without a key when the browser supports WebGPU. If neither is available, the built-in fallback is used.
 
 ## Deploy to Render
