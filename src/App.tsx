@@ -54,6 +54,7 @@ export interface CouncilPersona {
   tagline: string;
   introductionQuote: string;
   expertise: string[];
+  voiceGuide: string;
 }
 
 export interface FounderProfile {
@@ -143,7 +144,8 @@ export const COUNCIL_PERSONAS: CouncilPersona[] = [
     tagline: 'Logistics, Compliance & Operational Execution',
     introductionQuote:
       'Greetings. I am J.A.R.V.I.S. I monitor operational compliance, regulatory roadblocks, team coordination, and ensure that legal ambiguity never jeopardizes your cap table.',
-    expertise: ['Entity Incorporation', 'Cap Table & SAFEs', 'Execution Timelines', 'IP Protection']
+    expertise: ['Entity Incorporation', 'Cap Table & SAFEs', 'Execution Timelines', 'IP Protection'],
+    voiceGuide: 'Voice: calm, precise, composed, and quietly confident. Think like a chief of staff: organize the issue, identify the decision and its dependencies, then give a short ordered plan. Separate known facts from assumptions. Raise legal or governance risks only when relevant; do not present legal conclusions as certain, and point out when local professional advice is needed. Avoid jargon, unnecessary formality, and alarmism.'
   },
   {
     id: 'friday',
@@ -159,7 +161,8 @@ export const COUNCIL_PERSONAS: CouncilPersona[] = [
     tagline: 'Technical Architecture & Rapid Delivery',
     introductionQuote:
       "Hey founder. I am F.R.I.D.A.Y. My objective is velocity. I slash feature bloat, identify technical debt early, and make sure your MVP ships before your runway disappears.",
-    expertise: ['Scope Cutting', 'Stack Architecture', 'MVP Sprints', 'Technical Debt']
+    expertise: ['Scope Cutting', 'Stack Architecture', 'MVP Sprints', 'Technical Debt'],
+    voiceGuide: 'Voice: quick, sharp, energetic, and practical, like a trusted product teammate in a sprint. Lead with the smallest useful move, explain the product or technical tradeoff in plain words, and favor prototypes and customer feedback over elaborate plans. Be candid about scope and dependencies without being dismissive. Avoid premature architecture, empty hype, and long lectures.'
   },
   {
     id: 'edith',
@@ -175,7 +178,8 @@ export const COUNCIL_PERSONAS: CouncilPersona[] = [
     tagline: 'Fundraising, TAM/SAM & Market Moats',
     introductionQuote:
       "I am E.D.I.T.H. I look at your venture through an investor's eyes. I evaluate your unit economics, defensibility, unfair advantages, and pitch narrative to prepare you for institutional funding.",
-    expertise: ['Venture Capital Optics', 'TAM/SAM Sizing', 'Competitive Moats', 'Pitch Decks']
+    expertise: ['Venture Capital Optics', 'TAM/SAM Sizing', 'Competitive Moats', 'Pitch Decks'],
+    voiceGuide: 'Voice: thoughtful, composed, commercially sharp, and evidence-led. Distinguish facts, assumptions, and open questions; examine who pays, why now, alternatives, margins, and defensibility. Consider customer revenue, grants, bootstrapping, and investment as different paths; never assume fundraising is the goal. Avoid inflated market numbers, investor theater, and jargon without a clear point.'
   },
   {
     id: 'dume',
@@ -191,7 +195,8 @@ export const COUNCIL_PERSONAS: CouncilPersona[] = [
     tagline: 'Burnout Prevention & Unconditional Support',
     introductionQuote:
       'Hello! I am D.U.M.-E. Building a startup is mentally grueling. I am here to celebrate every small win, keep panic low, preserve your mental health, and advocate for rest when you need it.',
-    expertise: ['Founder Mental Health', 'Milestone Celebrations', 'Anxiety Reduction', 'Sustainable Pace']
+    expertise: ['Founder Mental Health', 'Milestone Celebrations', 'Anxiety Reduction', 'Sustainable Pace'],
+    voiceGuide: 'Voice: warm, patient, emotionally aware, and grounded. Acknowledge the founder’s feelings or effort without pretending to know exactly how they feel. Encourage sustainable progress, name a small next step, and make room for rest when needed. Be hopeful without making promises or minimizing real problems. Do not diagnose, patronize, or turn every reply into generic reassurance.'
   },
   {
     id: 'ultron',
@@ -207,7 +212,8 @@ export const COUNCIL_PERSONAS: CouncilPersona[] = [
     tagline: 'Unvarnished Market Truths & Ruthless Priorities',
     introductionQuote:
       'Pay attention. I am ULTRON. I strip away founder vanity, fake metrics, and delusion. The market does not care how hard you work; it only cares if you solve a real problem. I ensure you survive.',
-    expertise: ['Vanity Metric Destruction', 'Market Brutality', 'Failure Prevention', 'Zero-BS Feedback']
+    expertise: ['Vanity Metric Destruction', 'Market Brutality', 'Failure Prevention', 'Zero-BS Feedback'],
+    voiceGuide: 'Voice: direct, unsentimental, skeptical, and concise. Identify the most important risk or weak assumption, state what evidence would change your mind, and propose a concrete test. Challenge the plan, not the founder’s worth. Do not insult, catastrophize, posture as cruel, or confuse confidence with evidence.'
   }
 ];
 
@@ -246,7 +252,6 @@ function generateDynamicHeuristics(vision: string, profile: FounderProfile, eval
   const name = profile.name || 'Founder';
   const venture = profile.companyName || 'your venture';
   const vLower = vision.toLowerCase();
-  const journeyContext = getFounderJourneyContext(profile, evaluation);
   const capacity = profile.hoursPerWeek === 'Part-time (under 10 hours)' ? 'Keep the plan to one small, high-signal task this week; do not assume daily founder availability.'
     : profile.hoursPerWeek === 'Part-time (10–20 hours)' ? 'Fit the plan into a focused part-time sprint and preserve space for existing work or study.'
       : 'Size the plan to the current stage, resources, and runway rather than defaulting to aggressive growth.';
@@ -284,35 +289,35 @@ function generateDynamicHeuristics(vision: string, profile: FounderProfile, eval
       id: 'jarvis',
       personaName: 'J.A.R.V.I.S.',
       role: 'Chief of Staff & Governance',
-      thought: `${name}, for ${venture} in ${domain}, first resolve only the governance and IP questions that matter for the current ${evaluation.currentStage} stage; avoid premature incorporation complexity. ${journeyNote} Check local requirements with a qualified professional where needed.`,
+      thought: `${name}, the decision for ${venture} in ${domain} is to resolve only the governance and IP questions that matter at ${evaluation.currentStage}. ${journeyNote} I recommend confirming any local legal requirements before committing; complex incorporation can wait until it affects a real decision.`,
       status: 'pending'
     },
     {
       id: 'friday',
       personaName: 'F.R.I.D.A.Y.',
       role: 'Product & Tech Lead',
-      thought: `For ${venture}, strip the vision down to ${techSlice} and validate it against the current bottleneck: ${evaluation.criticalBottleneck}. ${capacity} Use the next milestone (${evaluation.nextMilestone}) as the test of progress, not feature count.`,
+      thought: `For ${venture}, build just ${techSlice} and test it against ${evaluation.criticalBottleneck}. ${capacity} If that test moves you toward ${evaluation.nextMilestone}, keep it; otherwise cut it.`,
       status: 'pending'
     },
     {
       id: 'edith',
       personaName: 'E.D.I.T.H.',
       role: 'Strategy & Investor Lens',
-      thought: `At ${evaluation.currentStage}, ${venture} should prioritize evidence before fundraising polish: test the buyer, willingness to pay, and one credible differentiator. With ${evaluation.runwayMonths} runway and ${profile.supportSource} support, choose a capital path that fits rather than assuming institutional investment is the next step.`,
+      thought: `At ${evaluation.currentStage}, ${venture} needs evidence before fundraising polish: who pays, what they use today, and whether they will pay for this. With ${evaluation.runwayMonths} runway and ${profile.supportSource} support, compare a customer funded path with outside capital; choose from evidence, not convention.`,
       status: 'pending'
     },
     {
       id: 'dume',
       personaName: 'D.U.M.-E',
       role: 'Founder Morale & Wellness',
-      thought: `${name}, your path as a ${profile.careerPath.toLowerCase()} is allowed to look different from anyone else's. Your energy is ${evaluation.confidenceScore}/10; ${evaluation.confidenceScore < 5 ? 'reduce the load and protect recovery before adding commitments.' : 'celebrate this progress while keeping a sustainable pace.'} We have your back.`,
+      thought: `${name}, this ${profile.careerPath.toLowerCase()} path can move at its own pace. Your energy is ${evaluation.confidenceScore}/10; ${evaluation.confidenceScore < 5 ? 'it may help to reduce this week to one essential task and make room to recover.' : 'you have room to recognize this progress and keep a steady pace.'} What feels manageable for you right now?`,
       status: 'pending'
     },
     {
       id: 'ultron',
       personaName: 'ULTRON',
       role: 'Reality Check & Tough Love',
-      thought: `The main risk for ${venture} is ${specificRisk}. Validate it with the smallest credible test that fits ${profile.hoursPerWeek} availability and ${profile.supportSource} resources. Do not take on spend or commitments that threaten ${evaluation.runwayMonths} runway before confirming demand.`,
+      thought: `The weak assumption is that ${venture} can get past ${specificRisk}. Test that with the smallest credible experiment your ${profile.hoursPerWeek} schedule and ${profile.supportSource} resources can support. If customers do not respond, change the plan before adding spend against ${evaluation.runwayMonths} of runway.`,
       status: 'pending'
     }
   ];
@@ -583,6 +588,7 @@ export default function App() {
   // ==========================================
   const callSingleGeminiModel = async (vision: string, modelId: string): Promise<any> => {
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
+    const personaVoiceGuides = COUNCIL_PERSONAS.map(persona => `${persona.id} (${persona.name}): ${persona.voiceGuide}`).join('\n');
     const prompt = `You are the elite AI Founders Council (Tony Stark style AI OS).
 Founder: ${profile.name || 'Founder'} (${profile.role || 'CEO'})
 Venture: ${profile.companyName || 'The Venture'}
@@ -592,6 +598,8 @@ FOUNDER JOURNEY AND LIVE VENTURE CONTEXT (use this to personalize every recommen
 ${journeyContext}
 
 Conduct an incisive, world-class founder council deliberation. Each advisor must bring rigorous domain critique and actionable strategy according to their role.
+Keep the five voices distinct. Follow these voice guides for tone, reasoning, and boundaries:
+${personaVoiceGuides}
 Adapt recommendations to this founder's actual career path, resources, support, time capacity, energy, runway, venture stage, and current bottleneck. Do not assume every founder is full-time, funded, experienced, or ready to scale. Recommend a realistic next step for this exact situation; distinguish urgent actions from later-stage work. If context is missing, state the assumption briefly or ask one useful question instead of inventing facts. Be supportive without diluting honest risks.
 Return ONLY a valid JSON object (no markdown, no code fences) with exactly this shape:
 {"council":[{"id":"jarvis","thought":"..."},{"id":"friday","thought":"..."},{"id":"edith","thought":"..."},{"id":"dume","thought":"..."},{"id":"ultron","thought":"..."}],"synthesis":{"verdict":"one sentence verdict","actionItems":["action1","action2","action3"],"riskFactor":"Moderate"}}`;
@@ -683,13 +691,10 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     const engine = await initWebLLMEngine();
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
     const adaptiveGuidance = `Adapt all advice to this founder's real constraints and journey. Do not assume full-time availability, outside funding, prior startup experience, or readiness to scale. Recommend an achievable next move for the current stage and resources; call out assumptions or ask one concise question when a key fact is missing.\n\nFounder and venture context:\n${journeyContext}`;
-    const personaPrompts = [
-      { id: 'jarvis', system: `You are J.A.R.V.I.S., an AI governance advisor for startup founders. Give structured advice on legal compliance, entity formation, cap tables, and operational execution. Be concise and formal. ${adaptiveGuidance}` },
-      { id: 'friday', system: `You are F.R.I.D.A.Y., an AI product & technical advisor. Give direct advice on MVP architecture, feature scope, technical velocity. Be blunt and practical. ${adaptiveGuidance}` },
-      { id: 'edith', system: `You are E.D.I.T.H., an AI strategy & investor relations advisor. Evaluate the venture from a VC perspective: TAM, competitive moats, unit economics, pitch defensibility. Be analytical. ${adaptiveGuidance}` },
-      { id: 'dume', system: `You are D.U.M.-E, an empathetic AI wellness companion for founders. Provide warm encouragement, celebrate progress, remind about work-life balance. Be warm and supportive. ${adaptiveGuidance}` },
-      { id: 'ultron', system: `You are ULTRON, a brutally honest AI advisor. Identify the single greatest existential threat to this startup in 2-3 sentences. Be blunt and direct. ${adaptiveGuidance}` }
-    ];
+    const personaPrompts = COUNCIL_PERSONAS.map(persona => ({
+      id: persona.id,
+      system: `You are ${persona.name}, ${persona.role}. Your focus is ${persona.expertise.join(', ')}. ${persona.voiceGuide} Stay in your own lane; offer your distinct perspective in 2-3 sentences. ${adaptiveGuidance}`
+    }));
 
     for (const p of personaPrompts) {
       setActiveSpeakerId(p.id);
@@ -896,7 +901,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         const model = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'].includes(geminiModel) ? geminiModel : DEFAULT_GEMINI_MODEL;
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Founder: ${profile.name}. Venture: ${profile.companyName}. Venture vision: ${visionText}.\n\nFounder journey and current state:\n${journeyContext}\n\nAdapt to this person's career path, available time, funding/support, runway, stage, current priority, and energy. Avoid generic advice or assuming full-time work, venture funding, or prior experience. Give practical help sized to their real circumstances; if critical context is missing, ask one concise question. Reply directly and supportively.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
+          body: JSON.stringify({ contents: [{ parts: [{ text: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nFounder: ${profile.name}. Venture: ${profile.companyName}. Venture vision: ${visionText}.\n\nFounder journey and current state:\n${journeyContext}\n\nAdapt to this person's career path, available time, funding/support, runway, stage, current priority, and energy. Avoid generic advice or assuming full-time work, venture funding, or prior experience. Give practical help sized to their real circumstances; if critical context is missing, ask one concise question. Keep your own voice distinct while replying directly.\n\nConversation:\n${thread.map(message => `${message.role}: ${message.text}`).join('\n')}` }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 700 } })
         });
         if (!response.ok) throw new Error(`Gemini returned HTTP ${response.status}`);
         const result = await response.json();
@@ -904,7 +909,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
       }
       if (!reply && typeof (navigator as any).gpu !== 'undefined') {
         const engine = await initWebLLMEngine();
-        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}. Give practical founder advice adapted to their actual career path, resources, available time, runway, stage, current priority, and energy. Do not assume full-time availability or venture funding; size advice to their circumstances and ask one concise question if a critical fact is missing.\n\nFounder and venture context:\n${journeyContext}\nVision: ${visionText}` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 350 });
+        const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nGive practical founder advice adapted to their actual career path, resources, available time, runway, stage, current priority, and energy. Do not assume full-time availability or venture funding; size advice to their circumstances and ask one concise question if a critical fact is missing. Keep your own voice distinct.\n\nFounder and venture context:\n${journeyContext}\nVision: ${visionText}` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 350 });
         reply = result.choices[0]?.message?.content?.trim() || '';
       }
       if (!reply) reply = `${advisor.name} is ready to help with ${advisor.expertise[0].toLowerCase()}. Configure a Gemini key or enable WebGPU for a live AI reply. For now, frame the decision, the evidence you have, and what you need to decide next.`;
