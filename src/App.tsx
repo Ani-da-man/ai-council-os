@@ -7,7 +7,8 @@ import {
   LayoutDashboard, Map, MessageCircle, Users, Target, Volume2, VolumeX
 } from 'lucide-react';
 import { retrieveVentureGuidance, type VentureAdvisorId } from './venturePlaybook';
-import { COUNCIL_LANGUAGES, detectCouncilLanguageAsync, getCouncilLanguage, getLocalizedCouncilFallback, getLocalizedSynthesisFallback, type CouncilLanguageId } from './councilLanguages';
+import { generateCouncilSpeech, getSpeechProfile } from './councilSpeech';
+import { COUNCIL_LANGUAGES, detectCouncilLanguageAsync, getCouncilLanguage, getLocalizedCouncilFallback, getLocalizedSynthesisFallback, usesReplyScript, type CouncilLanguageId } from './councilLanguages';
 
 // ==========================================
 // INTELLIGENCE STACK CONFIGURATION
@@ -382,14 +383,22 @@ export default function App() {
   const [responseLanguageId, setResponseLanguageId] = useState<CouncilLanguageId>(() => {
     return 'en';
   });
+  const [languageChoice, setLanguageChoice] = useState<CouncilLanguageId | 'auto'>(() => {
+    try {
+      const saved = localStorage.getItem('COUNCIL_LANGUAGE_CHOICE');
+      return COUNCIL_LANGUAGES.find(language => language.id === saved)?.id || 'auto';
+    } catch { return 'auto'; }
+  });
+  const [councilReplyLanguage, setCouncilReplyLanguage] = useState<CouncilLanguageId>('en');
+  const playback = useRef<{ request: AbortController; audio?: HTMLAudioElement; url?: string } | null>(null);
   const [cloudVoiceTranscription, setCloudVoiceTranscription] = useState(false);
   const [voiceTranscriptionStatus, setVoiceTranscriptionStatus] = useState('');
+  const [voicePending, setVoicePending] = useState(false);
+  const voiceTranscript = useRef<{ text: string; language: CouncilLanguageId } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [audioWaveform, setAudioWaveform] = useState<number[]>([15, 25, 40, 20, 60, 30, 45, 15]);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const [isDeliberating, setIsDeliberating] = useState(false);
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   const [deliberationFeed, setDeliberationFeed] = useState<CouncilThought[]>([]);
@@ -397,7 +406,7 @@ export default function App() {
   const [activeModel, setActiveModel] = useState<IntelligenceTier | null>(null);
   const [speakingThoughtId, setSpeakingThoughtId] = useState<string | null>(null);
   const [speechNotice, setSpeechNotice] = useState('');
-  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [speechNeedsPlay, setSpeechNeedsPlay] = useState(false);
 
   // Intelligence Configuration
   const [geminiApiKey, setGeminiApiKey] = useState(() => {
@@ -483,7 +492,7 @@ export default function App() {
   const [isShowcaseDemo, setIsShowcaseDemo] = useState(() => {
     try { return localStorage.getItem('COUNCIL_SHOWCASE_DEMO') === 'true'; } catch { return false; }
   });
-  const [advisorChats, setAdvisorChats] = useState<Record<string, { role: 'founder' | 'advisor'; text: string }[]>>(() => {
+  const [advisorChats, setAdvisorChats] = useState<Record<string, { role: 'founder' | 'advisor'; text: string; language?: CouncilLanguageId }[]>>(() => {
     try { return JSON.parse(localStorage.getItem('COUNCIL_ADVISOR_CHATS') || '{}'); } catch { return {}; }
   });
 
@@ -512,11 +521,12 @@ export default function App() {
   }, [enginePreference]);
 
   useEffect(() => {
-    try { localStorage.setItem('COUNCIL_RESPONSE_LANGUAGE', responseLanguageId); } catch (e) { console.warn(e); }
-  }, [responseLanguageId]);
+    try { localStorage.setItem('COUNCIL_LANGUAGE_CHOICE', languageChoice); } catch (e) { console.warn(e); }
+  }, [languageChoice]);
 
   useEffect(() => {
     let current = true;
+    if (voiceTranscript.current?.text === visionText) return;
     if (!visionText.trim()) {
       setResponseLanguageId('en');
       return;
@@ -526,17 +536,6 @@ export default function App() {
     });
     return () => { current = false; };
   }, [visionText]);
-
-  useEffect(() => {
-    if (!('speechSynthesis' in window)) return;
-    const updateVoices = () => setSpeechVoices(window.speechSynthesis.getVoices());
-    updateVoices();
-    window.speechSynthesis.onvoiceschanged = updateVoices;
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-      window.speechSynthesis.cancel();
-    };
-  }, []);
 
   // Voice recognition setup
   useEffect(() => {
@@ -548,10 +547,14 @@ export default function App() {
       recognitionRef.current.interimResults = true;
       recognitionRef.current.onresult = (event: any) => {
         let t = '';
-        for (let i = 0; i < event.results.length; i++) t += event.results[i][0].transcript;
-        setVisionText(t);
+        for (let i = 0; i < event.results.length; i++) t += `${event.results[i][0].transcript} `;
+        voiceTranscript.current = null;
+        setVisionText(t.trim());
       };
-      recognitionRef.current.onerror = () => setIsRecording(false);
+      recognitionRef.current.onerror = () => {
+        setIsRecording(false);
+        setVoiceTranscriptionStatus('Browser dictation stopped. Check microphone access or try Gemini transcription.');
+      };
       recognitionRef.current.onend = () => setIsRecording(false);
     } catch (e) {
       console.warn('Speech recognition init error:', e);
@@ -587,102 +590,154 @@ export default function App() {
           body: JSON.stringify({
             contents: [{ parts: [
               { inlineData: { mimeType, data: btoa(binary) } },
-              { text: `Listen to this founder's recording. Detect the primary language spoken and transcribe the speech faithfully in that same language and its normal script. Do not translate it. Return only JSON: {"language":"one of en,mr,hi,ta,kn,ml,te,bn,gu","transcript":"..."}. If speech is mixed, use the dominant language and preserve code-switching in the transcript.` }
+              { text: `Listen to this founder's recording. ${languageChoice === 'auto' ? 'Detect the primary language spoken.' : `Expect ${getCouncilLanguage(languageChoice).name}.`} Transcribe the speech faithfully in its original language and script. Do not translate it. Return only JSON: {"language":"one of en,mr,hi,ta,kn,ml,te,bn,gu","transcript":"..."}. If speech is mixed, use the dominant language and preserve code-switching in the transcript.` }
             ] }],
             generationConfig: { responseMimeType: 'application/json', temperature: 0, maxOutputTokens: 1200 }
           })
         });
         if (!response.ok) continue;
         const data = await response.json();
-        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const raw = data.candidates?.[0]?.content?.parts?.find((part: { thought?: boolean; text?: string }) => !part.thought && part.text)?.text || '';
         try { result = JSON.parse(raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()); } catch { result = null; }
         if (result?.transcript) break;
       }
       if (!result?.transcript) throw new Error('No transcript returned');
       const languageId = COUNCIL_LANGUAGES.some(language => language.id === result.language) ? result.language as CouncilLanguageId : await detectCouncilLanguageAsync(result.transcript);
+      voiceTranscript.current = { text: result.transcript, language: languageId };
       setVisionText(result.transcript);
       setResponseLanguageId(languageId);
       setVoiceTranscriptionStatus(`Detected ${getCouncilLanguage(languageId).nativeName}. Review the transcript before continuing.`);
     } catch (error) {
       console.warn('Multilingual voice transcription failed:', error);
-      setVoiceTranscriptionStatus('Automatic voice transcription was unavailable. Review the browser transcript or type your message.');
+      setVoiceTranscriptionStatus('Gemini transcription was unavailable. Try browser dictation with a language selected, or type your message.');
     }
   };
 
   const toggleRecording = async () => {
-    if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in this browser. Please type or select a demo vision.');
-      return;
-    }
+    if (voicePending) return;
     if (isRecording) {
-      recognitionRef.current.stop();
-      mediaRecorderRef.current?.stop();
+      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+      else recognitionRef.current?.stop();
       setIsRecording(false);
     } else {
       try {
         setVoiceTranscriptionStatus('');
-        recognitionRef.current.lang = getCouncilLanguage(responseLanguageId).locale;
         if (cloudVoiceTranscription && geminiApiKey.trim() && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+          setVoicePending(true);
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaStreamRef.current = stream;
-          audioChunksRef.current = [];
-          const recorder = new MediaRecorder(stream);
+          const chunks: Blob[] = [];
+          let recorder: MediaRecorder;
+          try {
+            recorder = new MediaRecorder(stream);
+            recorder.start();
+          } catch (error) {
+            stream.getTracks().forEach(track => track.stop());
+            throw error;
+          }
           mediaRecorderRef.current = recorder;
-          recorder.ondataavailable = event => { if (event.data.size) audioChunksRef.current.push(event.data); };
+          recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
           recorder.onstop = () => {
-            const audio = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-            void transcribeRecordedAudio(audio);
-            mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-            mediaStreamRef.current = null;
+            stream.getTracks().forEach(track => track.stop());
+            mediaRecorderRef.current = null;
+            setIsRecording(false);
+            setVoicePending(true);
+            const audio = new Blob(chunks, { type: (recorder.mimeType || 'audio/webm').split(';')[0] });
+            void transcribeRecordedAudio(audio).finally(() => setVoicePending(false));
           };
-          recorder.start();
+        } else {
+          if (!recognitionRef.current) {
+            setVoiceTranscriptionStatus('This browser cannot dictate directly. Enable Gemini transcription or type your idea.');
+            return;
+          }
+          recognitionRef.current.lang = getCouncilLanguage(languageChoice === 'auto' ? responseLanguageId : languageChoice).locale;
+          recognitionRef.current.start();
         }
-        recognitionRef.current.start();
         setIsRecording(true);
       } catch (e) {
         console.warn(e);
         setVoiceTranscriptionStatus('Microphone access failed. You can still type your idea.');
-      }
+      } finally { setVoicePending(false); }
     }
   };
 
   const stopSpeech = () => {
+    const active = playback.current;
+    playback.current = null;
+    active?.request.abort();
+    active?.audio?.pause();
+    if (active?.url) URL.revokeObjectURL(active.url);
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     setSpeakingThoughtId(null);
+    setSpeechNeedsPlay(false);
   };
 
-  const speakCouncilText = (id: string, text: string) => {
-    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-      setSpeechNotice('Spoken replies are not supported by this browser. The written reply is still available.');
-      return;
-    }
-    const language = getCouncilLanguage(responseLanguageId);
-    const voices = speechVoices.length ? speechVoices : window.speechSynthesis.getVoices();
-    if (!voices.length) {
-      setSpeechNotice('The browser is still loading its installed speech voices. Try the listen button again in a moment.');
-      return;
-    }
-    const locale = language.locale.toLowerCase();
-    const voice = voices.find(item => item.lang.toLowerCase() === locale)
-      || voices.find(item => item.lang.toLowerCase().startsWith(`${language.id}-`))
-      || voices.find(item => item.lang.toLowerCase() === language.id);
-    if (!voice) {
-      setSpeechNotice(`No ${language.nativeName} speech voice is installed in this browser or device. Add a ${language.locale} voice in your device's speech settings to listen aloud.`);
-      return;
-    }
-    window.speechSynthesis.cancel();
+  useEffect(() => {
+    stopSpeech();
     setSpeechNotice('');
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language.locale;
-    utterance.voice = voice;
-    utterance.rate = 0.96;
-    utterance.onend = () => setSpeakingThoughtId(null);
-    utterance.onerror = () => {
-      setSpeakingThoughtId(null);
-      setSpeechNotice(`The ${language.nativeName} voice could not play this reply on this device.`);
-    };
-    utterance.onstart = () => setSpeakingThoughtId(id);
+  }, [stage, workspaceTab]);
+
+  const speakCouncilText = async (id: string, text: string, languageId = councilReplyLanguage, personaId = id) => {
+    stopSpeech();
+    setSpeechNotice('');
+    const language = getCouncilLanguage(languageId);
+    const active: NonNullable<typeof playback.current> = { request: new AbortController() };
+    playback.current = active;
     setSpeakingThoughtId(id);
+
+    const finish = (notice = '') => {
+      if (playback.current !== active) return;
+      stopSpeech();
+      setSpeechNotice(notice);
+    };
+
+    if (geminiApiKey.trim()) {
+      setSpeechNotice('Preparing spoken reply…');
+      try {
+        const clip = await generateCouncilSpeech(text, language, personaId, geminiApiKey.trim(), active.request.signal);
+        if (playback.current !== active) return;
+        const url = URL.createObjectURL(clip);
+        active.url = url;
+        const audio = new Audio(url);
+        active.audio = audio;
+        audio.onended = () => finish();
+        audio.onerror = () => finish('The spoken reply could not play. The written reply is available.');
+        await audio.play();
+        if (playback.current === active) setSpeechNotice('');
+        return;
+      } catch (error) {
+        if (playback.current !== active) return;
+        if (active.audio && error instanceof DOMException && error.name === 'NotAllowedError') {
+          setSpeechNeedsPlay(true);
+          setSpeechNotice('Your browser paused automatic playback.');
+          return;
+        }
+        console.warn('Gemini speech unavailable:', error);
+        active.audio?.pause();
+        if (active.url) URL.revokeObjectURL(active.url);
+        active.audio = undefined;
+        active.url = undefined;
+      }
+    }
+    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+      finish('Spoken playback is unavailable. The written reply is available.');
+      return;
+    }
+    const voices = window.speechSynthesis.getVoices();
+    const matching = voices.filter(voice => voice.lang.toLowerCase().split(/[-_]/)[0] === language.id);
+    const voice = matching.find(item => item.lang.toLowerCase() === language.locale.toLowerCase()) || matching[0];
+    if (!voice) {
+      finish('No matching ' + language.name + ' voice is available. Add a device voice or check your Gemini configuration.');
+      return;
+    }
+    const profile = getSpeechProfile(personaId);
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = voice.lang;
+    utterance.voice = voice;
+    utterance.pitch = profile.pitch;
+    utterance.rate = profile.rate;
+    utterance.onend = () => finish();
+    utterance.onerror = () => finish('The device could not play this reply. The written reply is available.');
+    setSpeechNotice(geminiApiKey.trim() ? 'Using your device voice for this reply.' : '');
     window.speechSynthesis.speak(utterance);
   };
 
@@ -745,9 +800,9 @@ export default function App() {
   // ==========================================
   // ENGINE 1: Google Gemini (Resilient Multi-Model Cascade)
   // ==========================================
-  const callSingleGeminiModel = async (vision: string, modelId: string): Promise<any> => {
+  const callSingleGeminiModel = async (vision: string, modelId: string, languageId: CouncilLanguageId): Promise<any> => {
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
-    const responseLanguage = getCouncilLanguage(responseLanguageId);
+    const responseLanguage = getCouncilLanguage(languageId);
     const personaVoiceGuides = COUNCIL_PERSONAS.map(persona => {
       const playbook = retrieveVentureGuidance({ question: vision, ventureContext: journeyContext, advisorId: persona.id as VentureAdvisorId, stage: evalSheet.currentStage, limit: 2 });
       return `${persona.id} (${persona.name}) voice: ${persona.voiceGuide}\n${persona.id} venture guidance:\n${playbook}`;
@@ -790,12 +845,24 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     }
 
     const data = await res.json();
-    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let text = data.candidates?.[0]?.content?.parts
+      ?.filter((part: { thought?: boolean }) => !part.thought)
+      .map((part: { text?: string }) => part.text || '').join('') || '';
     text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-    return JSON.parse(text);
+    const reply = JSON.parse(text);
+    const validCouncil = Array.isArray(reply.council) && COUNCIL_PERSONAS.every(persona =>
+      reply.council.some((item: { id: string; thought: unknown }) => item.id === persona.id && usesReplyScript(item.thought, languageId))
+    );
+    const synthesis = reply.synthesis;
+    if (!validCouncil || !usesReplyScript(synthesis?.verdict, languageId) ||
+        !Array.isArray(synthesis.actionItems) || !synthesis.actionItems.length ||
+        !synthesis.actionItems.every((action: unknown) => usesReplyScript(action, languageId))) {
+      throw new Error('Council response was incomplete or used an unexpected script');
+    }
+    return reply;
   };
 
-  const executeGeminiDeliberationCascade = async (vision: string): Promise<void> => {
+  const executeGeminiDeliberationCascade = async (vision: string, languageId: CouncilLanguageId): Promise<void> => {
     // Restrict cloud inference to the approved Gemini 3 family, including when
     // an older or custom model value remains in this browser's localStorage.
     const allowedModels = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'];
@@ -806,7 +873,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     for (const modelId of candidateModels) {
       try {
         console.info(`[Council OS] Attempting deliberation via Gemini model: ${modelId}...`);
-        const parsed = await callSingleGeminiModel(vision, modelId);
+        const parsed = await callSingleGeminiModel(vision, modelId, languageId);
         await streamFeedItems(parsed.council || [], 750);
         setSynthesis(parsed.synthesis);
         setActiveModel(modelId);
@@ -853,10 +920,10 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     }
   };
 
-  const executeGemmaDeliberation = async (vision: string): Promise<void> => {
+  const executeGemmaDeliberation = async (vision: string, languageId: CouncilLanguageId): Promise<void> => {
     const engine = await initWebLLMEngine();
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
-    const responseLanguage = getCouncilLanguage(responseLanguageId);
+    const responseLanguage = getCouncilLanguage(languageId);
     const adaptiveGuidance = `Reply in ${responseLanguage.name} (${responseLanguage.nativeName}) using ${responseLanguage.script} script. Adapt all advice to this founder's real constraints and journey. Do not assume full-time availability, outside funding, prior startup experience, or readiness to scale. Recommend an achievable next move for the current stage and resources; call out assumptions or ask one concise question when a key fact is missing. Give clear recommendations based on sound general practice, but label uncertainty about this specific company. Never invent statistics, evidence, laws, or citations. Flag legal, tax, investment, and regulated-industry questions for qualified professional review.\n\nFounder and venture context:\n${journeyContext}`;
     const personaPrompts = COUNCIL_PERSONAS.map(persona => ({
       id: persona.id,
@@ -873,7 +940,9 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         temperature: 0.75,
         max_tokens: 220
       });
-      const thought = reply.choices[0]?.message?.content?.trim() || 'Analysis unavailable.';
+      const generated = reply.choices[0]?.message?.content?.trim();
+      if (!usesReplyScript(generated, languageId)) throw new Error('Local advisor used an unexpected script');
+      const thought = generated;
       const persona = COUNCIL_PERSONAS.find(c => c.id === p.id)!;
       setDeliberationFeed(prev => [...prev, { id: p.id, personaName: persona.name, role: persona.role, thought, status: 'completed' }]);
       await new Promise(r => setTimeout(r, 300));
@@ -893,10 +962,14 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     rawSynth = rawSynth.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
     try {
       const parsed = JSON.parse(rawSynth);
+      if (!usesReplyScript(parsed.verdict, languageId) || !Array.isArray(parsed.actionItems) ||
+          !parsed.actionItems.length || !parsed.actionItems.every((action: unknown) => usesReplyScript(action, languageId))) {
+        throw new Error('Local directive was incomplete or used an unexpected script');
+      }
       setSynthesis(parsed);
-      autoUpdateEvalSheet(parsed.actionItems?.[0]);
+      autoUpdateEvalSheet(parsed.actionItems[0]);
     } catch {
-      const fallbackSynth = generateDynamicHeuristics(vision, profile, evalSheet, responseLanguageId).synthesis;
+      const fallbackSynth = generateDynamicHeuristics(vision, profile, evalSheet, languageId).synthesis;
       setSynthesis(fallbackSynth);
       autoUpdateEvalSheet(fallbackSynth.actionItems?.[0]);
     }
@@ -913,8 +986,8 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
   // ==========================================
   // ENGINE 3: Dynamic Stark Engine (Safety Fallback)
   // ==========================================
-  const executeStarkEngine = async (vision: string): Promise<void> => {
-    const { council, synthesis: generatedSynthesis } = generateDynamicHeuristics(vision, profile, evalSheet, responseLanguageId);
+  const executeStarkEngine = async (vision: string, languageId: CouncilLanguageId): Promise<void> => {
+    const { council, synthesis: generatedSynthesis } = generateDynamicHeuristics(vision, profile, evalSheet, languageId);
     for (const t of council) {
       setActiveSpeakerId(t.id);
       await new Promise(r => setTimeout(r, 750));
@@ -931,12 +1004,17 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
   // ==========================================
   const triggerCouncilDeliberation = async (overrideVision?: string) => {
     const vision = overrideVision || visionText;
+    if (isDeliberating || isRecording || voicePending) return;
     if (!vision.trim()) {
       alert('Please describe your venture vision.');
       return;
     }
-    setStage('deliberation');
     setIsDeliberating(true);
+    const languageId = languageChoice === 'auto'
+      ? (voiceTranscript.current?.text === vision ? voiceTranscript.current.language : await detectCouncilLanguageAsync(vision))
+      : languageChoice;
+    setCouncilReplyLanguage(languageId);
+    setStage('deliberation');
     setDeliberationFeed([]);
     setSynthesis(null);
     setActiveModel(null);
@@ -944,7 +1022,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     // MODE: In-Browser Gemma Forced
     if (enginePreference === 'gemma') {
       try {
-        await executeGemmaDeliberation(vision);
+        await executeGemmaDeliberation(vision, languageId);
         setIsDeliberating(false);
         return;
       } catch (err) {
@@ -956,7 +1034,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     // MODE: Gemini Cloud (Auto or Explicit)
     if (geminiApiKey.trim()) {
       try {
-        await executeGeminiDeliberationCascade(vision);
+        await executeGeminiDeliberationCascade(vision, languageId);
         setIsDeliberating(false);
         return;
       } catch (err) {
@@ -969,7 +1047,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     if (typeof (navigator as any).gpu !== 'undefined') {
       try {
         console.info('[Orchestrator] Engaging Active In-Browser Gemma 2 2B Engine...');
-        await executeGemmaDeliberation(vision);
+        await executeGemmaDeliberation(vision, languageId);
         setIsDeliberating(false);
         return;
       } catch (err) {
@@ -980,7 +1058,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
 
     // Standby Fallback: Dynamic Stark Heuristic Engine
     console.info('[Orchestrator] Engaging Dynamic Context-Aware Stark Heuristic Engine (Offline Safety Net)...');
-    await executeStarkEngine(vision);
+    await executeStarkEngine(vision, languageId);
     setIsDeliberating(false);
   };
 
@@ -1031,6 +1109,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     setVisionText(demoVision);
     setEvalSheet(demoEvaluation);
     setSynthesis({ verdict: demoVerdict, actionItems: ['Run a focused pilot with three municipal teams.', 'Track precision, response time, and cost per resolved issue.', 'Interview operators weekly and remove false-positive friction.'], riskFactor: 'Moderate' });
+    setCouncilReplyLanguage('en');
     setDeliberationFeed([
       { id: 'jarvis', personaName: 'J.A.R.V.I.S.', role: 'Chief of Staff & Governance', thought: 'Define data retention and municipal access roles before expanding camera coverage.', status: 'completed' },
       { id: 'friday', personaName: 'F.R.I.D.A.Y.', role: 'Product & Tech Lead', thought: 'Keep the pilot focused on the two hazard classes operators act on most often.', status: 'completed' },
@@ -1058,17 +1137,16 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
     if (!text || advisorBusy) return;
     const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0];
     const journeyContext = getFounderJourneyContext(profile, evalSheet);
-    const detectedLanguageId = await detectCouncilLanguageAsync(text);
-    setResponseLanguageId(detectedLanguageId);
+    setAdvisorBusy(true);
+    const detectedLanguageId = languageChoice === 'auto' ? await detectCouncilLanguageAsync(text) : languageChoice;
     const responseLanguage = getCouncilLanguage(detectedLanguageId);
     const ventureGuidance = retrieveVentureGuidance({ question: `${text}\n${visionText}`, ventureContext: journeyContext, advisorId: advisor.id as VentureAdvisorId, stage: evalSheet.currentStage, limit: 3 });
     const thread = [...(advisorChats[advisor.id] || []), { role: 'founder' as const, text }];
     setAdvisorChats(prev => ({ ...prev, [advisor.id]: thread }));
     setAdvisorInput('');
-    setAdvisorBusy(true);
     try {
       let reply = '';
-      if (geminiApiKey.trim()) {
+      if (geminiApiKey.trim()) try {
         const model = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.8-flash'].includes(geminiModel) ? geminiModel : DEFAULT_GEMINI_MODEL;
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1076,19 +1154,52 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
         });
         if (!response.ok) throw new Error(`Gemini returned HTTP ${response.status}`);
         const result = await response.json();
-        reply = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        reply = result.candidates?.[0]?.content?.parts?.filter((part: { thought?: boolean }) => !part.thought).map((part: { text?: string }) => part.text || '').join('').trim() || '';
+      } catch (error) {
+        console.warn('Cloud advisor unavailable:', error);
       }
+      if (!usesReplyScript(reply, detectedLanguageId)) reply = '';
       if (!reply && typeof (navigator as any).gpu !== 'undefined') {
         const engine = await initWebLLMEngine();
         const result = await engine.chat.completions.create({ messages: [{ role: 'system', content: `You are ${advisor.name}, ${advisor.role}. Expertise: ${advisor.expertise.join(', ')}.\n\nYOUR PERSONALITY AND VOICE:\n${advisor.voiceGuide}\n\nReply in ${responseLanguage.name} (${responseLanguage.nativeName}) using ${responseLanguage.script} script. Give practical founder advice adapted to their actual career path, resources, available time, runway, stage, current priority, and energy. Do not assume full-time availability or venture funding; size advice to their circumstances and ask one concise question if a critical fact is missing. Keep your own voice distinct. Distinguish established principles from assumptions about this company. Do not invent facts, statistics, or citations. Flag legal, tax, investment, and regulated-industry questions for qualified professional review.\n\nFounder and venture context:\n${journeyContext}\nVision: ${visionText}\n\nRelevant venture playbook:\n${ventureGuidance}` }, ...thread.map(message => ({ role: message.role === 'founder' ? 'user' : 'assistant', content: message.text }))], temperature: 0.7, max_tokens: 650 });
         reply = result.choices[0]?.message?.content?.trim() || '';
       }
-      if (!reply) reply = `${advisor.name} is ready to help with ${advisor.expertise[0].toLowerCase()}. Configure a Gemini key or enable WebGPU for a live AI reply. For now, frame the decision, the evidence you have, and what you need to decide next.`;
-      setAdvisorChats(prev => ({ ...prev, [advisor.id]: [...(prev[advisor.id] || thread), { role: 'advisor', text: reply }] }));
+      if (!usesReplyScript(reply, detectedLanguageId)) reply = getLocalizedCouncilFallback(detectedLanguageId, advisor.id) || `${advisor.name} is ready to help with ${advisor.expertise[0].toLowerCase()}. Configure a Gemini key or enable WebGPU for a live AI reply. For now, frame the decision, the evidence you have, and what you need to decide next.`;
+      setAdvisorChats(prev => ({ ...prev, [advisor.id]: [...(prev[advisor.id] || thread), { role: 'advisor', text: reply, language: detectedLanguageId }] }));
     } catch (error: any) {
-      setAdvisorChats(prev => ({ ...prev, [advisor.id]: [...(prev[advisor.id] || thread), { role: 'advisor', text: `I couldn't reach the live model just now (${error?.message || 'connection issue'}). Your message is saved; try again in a moment or convene the full council.` }] }));
+      setAdvisorChats(prev => ({ ...prev, [advisor.id]: [...(prev[advisor.id] || thread), { role: 'advisor', language: detectedLanguageId, text: getLocalizedCouncilFallback(detectedLanguageId, advisor.id) || 'The live advisor is unavailable. Start by writing down your decision, the evidence you have, and the next fact you need to learn.' }] }));
     } finally { setAdvisorBusy(false); }
   };
+
+  const languagePicker = (
+    <select aria-label="Conversation language" value={languageChoice}
+      disabled={isRecording || voicePending || advisorBusy || isDeliberating}
+      onChange={event => setLanguageChoice(event.target.value as CouncilLanguageId | 'auto')}
+      className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <option value="auto">Auto detect</option>
+      {COUNCIL_LANGUAGES.map(language => <option key={language.id} value={language.id}>{language.name}</option>)}
+    </select>
+  );
+  const inputLanguage = getCouncilLanguage(languageChoice === 'auto' ? responseLanguageId : languageChoice);
+  const playbackDescription = geminiApiKey.trim()
+    ? 'Listen sends the written reply to Gemini for voiced playback. If Gemini is unavailable, playback uses a matching device voice.'
+    : 'Listen uses voices available on this device. Configure Gemini for expressive voices and more language coverage.';
+  const resumeSpeech = speechNeedsPlay && (
+    <button type="button" className="text-sm text-cyan-200 underline" onClick={async () => {
+      const active = playback.current;
+      try {
+        await active?.audio?.play();
+        if (playback.current === active) {
+          setSpeechNeedsPlay(false);
+          setSpeechNotice('');
+        }
+      } catch {
+        if (playback.current !== active) return;
+        stopSpeech();
+        setSpeechNotice('The spoken reply could not play. The written reply is available.');
+      }
+    }}>Play prepared audio</button>
+  );
 
   return (
     <div className="min-h-screen bg-[#060810] text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-black overflow-x-hidden relative flex flex-col">
@@ -1485,22 +1596,18 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               <p className="text-xs text-slate-400 mt-1">Start by speaking or typing. Venture Vision detects your language and keeps the conversation in it. The interface stays in English; council replies are written in your language, with optional spoken playback.</p>
             </div>
 
-            <label className="block p-4 rounded-xl bg-slate-900/70 border border-slate-800">
-              <span className="block text-[11px] uppercase font-bold tracking-wider text-slate-400">Automatic language detection</span>
-              <span className="block text-sm text-white mt-2">Detected language: <strong>{getCouncilLanguage(responseLanguageId).name}</strong></span>
-              <span className="block text-[11px] text-slate-500 mt-1">English is the default. As soon as you type or speak, replies follow the language detected in your input.</span>
-              <span className={`block text-[11px] mt-1 ${speechVoices.some(voice => voice.lang.toLowerCase().startsWith(`${getCouncilLanguage(responseLanguageId).id}-`) || voice.lang.toLowerCase() === getCouncilLanguage(responseLanguageId).id) ? 'text-emerald-300' : 'text-amber-300'}`}>
-                {speechVoices.some(voice => voice.lang.toLowerCase().startsWith(`${getCouncilLanguage(responseLanguageId).id}-`) || voice.lang.toLowerCase() === getCouncilLanguage(responseLanguageId).id)
-                  ? `A ${getCouncilLanguage(responseLanguageId).nativeName} speech voice is available on this device.`
-                  : `No ${getCouncilLanguage(responseLanguageId).nativeName} speech voice is currently listed on this device. Written replies still work.`}
+            <div className="block p-4 rounded-xl bg-slate-900/70 border border-slate-800">
+              <label className="flex items-center justify-between gap-3 text-sm">Conversation language {languagePicker}</label>
+              <span className="block text-[11px] text-slate-400 mt-2" aria-live="polite">
+                {languageChoice === 'auto' ? `Detected language: ${inputLanguage.name}. For automatic detection from audio, use Gemini transcription.` : `Dictation and replies are set to ${inputLanguage.name}.`}
               </span>
               <label className="flex items-start gap-2 mt-3 text-[11px] text-slate-400">
-                <input type="checkbox" className="mt-0.5 accent-cyan-400" checked={cloudVoiceTranscription} onChange={event => setCloudVoiceTranscription(event.target.checked)} disabled={!geminiApiKey.trim()} />
-                <span><strong className="text-slate-300">Improve voice language detection with Gemini</strong> — send this recording to your configured Gemini model for automatic language detection and transcription. Audio is only sent when you enable this option and record.</span>
+                <input type="checkbox" className="mt-0.5 accent-cyan-400" checked={cloudVoiceTranscription} onChange={event => setCloudVoiceTranscription(event.target.checked)} disabled={!geminiApiKey.trim() || isRecording || voicePending} />
+                <span><strong className="text-slate-300">Use Gemini transcription</strong> to detect spoken language. The recording is sent to Gemini when you stop.</span>
               </label>
               {!geminiApiKey.trim() && <span className="block text-[11px] text-slate-500 mt-1">Add a Gemini API key in Configuration to enable multilingual audio transcription.</span>}
               {voiceTranscriptionStatus && <span className="block text-[11px] text-cyan-300 mt-2" role="status">{voiceTranscriptionStatus}</span>}
-            </label>
+            </div>
 
             {/* Gemma In-Browser Readiness Banner */}
             {typeof (navigator as any).gpu !== 'undefined' && (
@@ -1544,6 +1651,8 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
                 <button
                   type="button"
                   onClick={toggleRecording}
+                  disabled={voicePending}
+                  aria-label={isRecording ? 'Stop recording' : 'Start recording'}
                   className={`flex items-center justify-center w-12 h-12 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white shadow-[0_0_25px_rgba(239,68,68,0.8)] scale-105' : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.4)]'}`}
                 >
                   {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -1564,7 +1673,8 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               <textarea
                 rows={4}
                 value={visionText}
-                onChange={e => setVisionText(e.target.value)}
+                disabled={isRecording || voicePending}
+                onChange={e => { voiceTranscript.current = null; setVisionText(e.target.value); }}
                 placeholder="Describe your startup vision in plain language (e.g. what are you building, who is the customer, what is your unfair advantage?)..."
                 className="w-full bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 resize-none"
               />
@@ -1576,7 +1686,8 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => setVisionText(item.text)}
+                      disabled={isRecording || voicePending}
+                      onClick={() => { voiceTranscript.current = null; setVisionText(item.text); }}
                       className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-slate-300 transition"
                     >
                       {item.title}
@@ -1601,7 +1712,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
 
                 <button
                   type="button"
-                  disabled={!visionText.trim()}
+                  disabled={!visionText.trim() || isRecording || voicePending || isDeliberating}
                   onClick={() => triggerCouncilDeliberation()}
                   className="w-full sm:w-auto px-6 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-sm shadow-[0_0_20px_rgba(6,182,212,0.4)] flex items-center justify-center space-x-2 transition"
                 >
@@ -1684,7 +1795,9 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               })}
             </div>
 
-            {speechNotice && <p role="status" className="p-3 rounded-xl bg-amber-950/40 border border-amber-700/40 text-xs text-amber-200">{speechNotice}</p>}
+            <p className="text-xs text-slate-400">{playbackDescription}</p>
+            {speechNotice && <p role="status" className="text-xs text-cyan-200">{speechNotice}</p>}
+            {resumeSpeech}
 
             {synthesis && (
               <div className="p-6 rounded-2xl bg-gradient-to-r from-cyan-950/70 via-slate-900 to-indigo-950/70 border border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.25)] space-y-4">
@@ -1886,7 +1999,69 @@ Return ONLY a valid JSON object (no markdown, no code fences) with exactly this 
               <div className="space-y-4"><div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-5"><h2 className="text-xl font-black text-white">Convene the council</h2><p className="text-sm text-slate-400 mt-1">Bring all five advisors back around your current venture thesis.</p><button onClick={handleStartNewLoop} className="mt-4 px-5 py-2.5 rounded-xl bg-cyan-500 text-slate-950 text-sm font-bold flex items-center gap-2"><Users className="w-4 h-4"/>Start a new council session</button></div><div className="grid sm:grid-cols-2 gap-3">{COUNCIL_PERSONAS.map(persona => <button key={persona.id} onClick={() => { setSelectedAdvisorId(persona.id); setWorkspaceTab('advisor'); }} className={`p-4 rounded-2xl text-left border ${persona.borderColor} ${persona.bgColor}`}><div className={`font-black ${persona.textColor}`}>{persona.name}</div><div className="text-xs text-slate-300 mt-1">{persona.role}</div><p className="text-xs text-slate-500 mt-2">{persona.tagline}</p><span className="inline-block text-[10px] text-cyan-300 mt-3">Talk one-on-one →</span></button>)}</div>{deliberationFeed.length > 0 && <div className="space-y-3"><h3 className="font-bold text-white">Latest council session</h3>{deliberationFeed.map(thought => <div key={thought.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800"><div className="text-xs font-bold text-cyan-300">{thought.personaName}</div><p className="text-sm text-slate-300 mt-1">{thought.thought}</p></div>)}</div>}</div>
             )}
 
-            {workspaceTab === 'advisor' && (() => { const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0]; const messages = advisorChats[advisor.id] || []; return <div className="max-w-3xl mx-auto rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden"><div className="p-4 border-b border-slate-800 flex flex-wrap items-center gap-3"><div className={`w-10 h-10 rounded-xl ${advisor.bgColor} ${advisor.textColor} grid place-items-center font-black`}>{advisor.avatarSymbol}</div><div><h2 className={`font-bold ${advisor.textColor}`}>Talk with {advisor.name}</h2><p className="text-[11px] text-slate-500">{advisor.role} · {advisor.tagline}</p></div><div className="ml-auto flex gap-2 items-center"><span className="text-[11px] text-slate-400">Replies follow your message language</span><select aria-label="Choose advisor" value={advisor.id} onChange={event => setSelectedAdvisorId(event.target.value)} className="max-w-36 bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs">{COUNCIL_PERSONAS.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}</select></div></div><div className="min-h-80 max-h-[55vh] overflow-y-auto p-4 space-y-3">{messages.length === 0 && <div className="text-center py-16"><MessageCircle className={`w-8 h-8 mx-auto ${advisor.textColor}`} /><p className="text-sm text-white mt-3">What’s on your mind?</p><p className="text-xs text-slate-500 mt-1">Ask for a second opinion, a next step, or help untangling a decision.</p></div>}{messages.map((message, index) => <div key={index} className={`max-w-[88%] p-3 rounded-xl text-sm whitespace-pre-wrap ${message.role === 'founder' ? 'ml-auto bg-cyan-950 text-cyan-50' : 'bg-slate-950 border border-slate-800 text-slate-200'}`}>{message.text}</div>)}{advisorBusy && <div className="text-xs text-slate-500 animate-pulse">{advisor.name} is thinking…</div>}</div><form onSubmit={event => { event.preventDefault(); void sendAdvisorMessage(); }} className="p-3 border-t border-slate-800 flex gap-2"><input value={advisorInput} onChange={event => setAdvisorInput(event.target.value)} placeholder={`Ask ${advisor.name} anything about the venture…`} className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-cyan-500"/><button disabled={advisorBusy || !advisorInput.trim()} className="px-4 rounded-xl bg-cyan-500 text-slate-950 disabled:opacity-40"><Send className="w-4 h-4"/></button></form></div>; })()}
+            {workspaceTab === 'advisor' && (() => {
+              const advisor = COUNCIL_PERSONAS.find(persona => persona.id === selectedAdvisorId) || COUNCIL_PERSONAS[0];
+              const messages = advisorChats[advisor.id] || [];
+              return (
+                <div className="max-w-3xl mx-auto rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden">
+                  <div className="p-4 border-b border-slate-800 flex flex-wrap items-center gap-3">
+                    <div className={advisor.textColor}>
+                      <h2 className="font-bold">Talk with {advisor.name}</h2>
+                      <p className="text-[11px] text-slate-400">{advisor.role}</p>
+                    </div>
+                    <div className="ml-auto flex flex-wrap gap-2 items-center">
+                      {languagePicker}
+                      <select aria-label="Choose advisor" value={advisor.id}
+                        onChange={event => { stopSpeech(); setSpeechNotice(''); setSelectedAdvisorId(event.target.value); }}
+                        className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                        {COUNCIL_PERSONAS.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="min-h-80 max-h-[55vh] overflow-y-auto p-4 space-y-3">
+                    {messages.length === 0 && (
+                      <div className="text-center py-16">
+                        <MessageCircle className={advisor.textColor + ' w-8 h-8 mx-auto'} />
+                        <p className="text-sm text-white mt-3">What’s on your mind?</p>
+                        <p className="text-xs text-slate-400 mt-1">Ask for a second opinion or help untangling a decision.</p>
+                      </div>
+                    )}
+                    {messages.map((message, index) => {
+                      const id = 'advisor-' + advisor.id + '-' + index;
+                      const playing = speakingThoughtId === id;
+                      return (
+                        <div key={index} lang={message.language ? getCouncilLanguage(message.language).locale : undefined}
+                          className={'max-w-[88%] p-3 rounded-xl text-sm whitespace-pre-wrap ' + (message.role === 'founder' ? 'ml-auto bg-cyan-950 text-cyan-50' : 'bg-slate-950 border border-slate-800 text-slate-200')}>
+                          <p>{message.text}</p>
+                          {message.role === 'advisor' && (
+                            <button type="button" lang="en" className="mt-2 inline-flex items-center gap-1 text-xs text-cyan-200"
+                              onClick={async () => {
+                                if (playing) return stopSpeech();
+                                const language = message.language || await detectCouncilLanguageAsync(message.text);
+                                void speakCouncilText(id, message.text, language, advisor.id);
+                              }}>
+                              {playing ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                              {playing ? 'Stop' : 'Listen'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {advisorBusy && <p className="text-xs text-slate-400">{advisor.name} is thinking…</p>}
+                  </div>
+                  <p className="px-4 text-xs text-slate-400">{playbackDescription}</p>
+                  {speechNotice && <p className="px-4 pt-2 text-xs text-cyan-200" role="status">{speechNotice}</p>}
+                  {resumeSpeech}
+                  <form onSubmit={event => { event.preventDefault(); void sendAdvisorMessage(); }} className="p-3 flex gap-2">
+                    <input value={advisorInput} onChange={event => setAdvisorInput(event.target.value)}
+                      placeholder={'Ask ' + advisor.name + ' anything about the venture…'}
+                      className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-sm" />
+                    <button aria-label="Send message" disabled={advisorBusy || !advisorInput.trim()}
+                      className="px-4 rounded-xl bg-cyan-500 text-slate-950 disabled:opacity-40"><Send className="w-4 h-4" /></button>
+                  </form>
+                </div>
+              );
+            })()}
           </div>
         )}
       </main>

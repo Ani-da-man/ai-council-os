@@ -24,6 +24,12 @@ export function getCouncilLanguage(id: string): CouncilLanguage {
   return COUNCIL_LANGUAGES.find(language => language.id === id) || COUNCIL_LANGUAGES[0];
 }
 
+export function usesReplyScript(text: unknown, id: CouncilLanguageId): text is string {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  const script = getCouncilLanguage(id).script;
+  return new RegExp(`\\p{Script=${script}}`, 'u').test(text);
+}
+
 /** Detect language from text using Unicode scripts, with a browser language model when available. */
 export function detectCouncilLanguage(text: string): CouncilLanguageId {
   const scripts: Array<[CouncilLanguageId, RegExp]> = [

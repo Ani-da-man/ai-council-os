@@ -64,11 +64,11 @@ This is prompt-time guidance: the app retrieves relevant knowledge for each resp
 
 ## Voice-first conversations and Indian language support
 
-The interface stays in English, and English is the default conversation language. Founders can type or speak in English, Marathi, Hindi, Tamil, Kannada, Malayalam, Telugu, Bengali, or Gujarati. The app detects language from typed text automatically (using the browser language detector where available, with script-based detection as a fallback) and asks the council to reply in the same language. Advisor chats follow the language of each new message.
+The interface stays in English. In the venture vision or advisor chat, leave **Conversation language** on **Auto detect**, or choose English, Marathi, Hindi, Tamil, Kannada, Malayalam, Telugu, Bengali, or Gujarati. The choice applies to dictation and new replies. With automatic detection, the council and advisor follow the language of your input, with English as the default.
 
-Voice is the primary input path. Browser speech recognition provides live transcription. For automatic multilingual audio transcription, configure a Gemini API key and enable **Improve voice language detection with Gemini** before recording. That explicit option sends the recording to Gemini to detect its language and produce a same-language transcript; review the transcript before continuing. Without that option, the browser speech-recognition service handles transcription, and its language accuracy depends on browser support and recognition settings.
+Choose a language to use the browser's live dictation in that language. To detect the language from audio, configure a Gemini API key and enable **Use Gemini transcription**. This sends the recording to Gemini after you stop and works in browsers that support microphone recording even when they lack built-in dictation. Review or edit the transcript before sending it to the council.
 
-Council replies remain available as text. Use **Listen** on an advisor response or **Listen to directive** for optional spoken playback. Playback uses voices installed on the current device; availability and quality vary by browser and operating system. The app reports when a matching voice is unavailable.
+Use **Listen** on a council or one-on-one advisor reply, or **Listen to directive**. With a configured Gemini key, this sends the written reply to Gemini 3.8 Flash TTS for speech in the reply's language. Each advisor uses a distinct voice and delivery style. If cloud playback is unavailable, the app tries a device voice in the same language with advisor-specific pitch and pace. The written reply stays visible when no matching voice is available.
 
 The demo workspace snapshot does not need an API key. Live Gemini responses require your configured Gemini key; local Gemma can run without a key when the browser supports WebGPU. If neither is available, the built-in fallback is used.
 
