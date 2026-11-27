@@ -68,7 +68,7 @@ The interface stays in English. In the venture vision or advisor chat, leave **C
 
 Choose a language to use the browser's live dictation in that language. To detect the language from audio, configure a Gemini API key and enable **Use Gemini transcription**. This sends the recording to Gemini after you stop and works in browsers that support microphone recording even when they lack built-in dictation. Review or edit the transcript before sending it to the council.
 
-Use **Listen** on a council or one-on-one advisor reply, or **Listen to directive**. With a configured Gemini key, this sends the written reply to Gemini 3.8 Flash TTS for speech in the reply's language. Each advisor uses a distinct voice and delivery style. If cloud playback is unavailable, the app tries a device voice in the same language with advisor-specific pitch and pace. The written reply stays visible when no matching voice is available.
+Use **Listen** on a council or one-on-one advisor reply, or **Listen to directive**. With a configured Gemini key, cloud playback covers all nine languages in the picker. The written reply is sent to Gemini 3.8 Flash TTS, with Flash-Lite TTS as a backup if the primary model is rate limited or unavailable. Each advisor uses a distinct voice and delivery style. If cloud playback is unavailable, the app tries a device voice in the same language with advisor-specific pitch and pace. The written reply stays visible when no matching voice is available.
 
 The demo workspace snapshot does not need an API key. Live Gemini responses require your configured Gemini key; local Gemma can run without a key when the browser supports WebGPU. If neither is available, the built-in fallback is used.
 

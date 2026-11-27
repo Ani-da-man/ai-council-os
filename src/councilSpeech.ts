@@ -14,13 +14,33 @@ export function getSpeechProfile(personaId: string) {
 }
 
 export async function generateCouncilSpeech(text: string, language: CouncilLanguage, personaId: string, key: string, signal: AbortSignal) {
+  try {
+    return await requestCouncilSpeech('gemini-3.8-flash-tts', text, language, personaId, key, signal);
+  } catch (error) {
+    if (signal.aborted || (error instanceof SpeechRequestError && ![403, 404, 429, 500, 502, 503, 504].includes(error.status))) {
+      throw error;
+    }
+    return requestCouncilSpeech('gemini-3.8-flash-lite-tts', text, language, personaId, key, signal);
+  }
+}
+
+class SpeechRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`Speech request returned HTTP ${status}`);
+    this.status = status;
+  }
+}
+
+async function requestCouncilSpeech(model: string, text: string, language: CouncilLanguage, personaId: string, key: string, signal: AbortSignal) {
   const profile = getSpeechProfile(personaId);
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     signal,
     body: JSON.stringify({
-      model: 'gemini-3.8-flash-tts',
+      model,
       input: [{
         type: 'user_input',
         content: [{
@@ -36,7 +56,7 @@ export async function generateCouncilSpeech(text: string, language: CouncilLangu
       generation_config: { speech_config: [{ voice: profile.voice }] }
     })
   });
-  if (!response.ok) throw new Error(`Speech request returned HTTP ${response.status}`);
+  if (!response.ok) throw new SpeechRequestError(response.status);
   const result = await response.json();
   const part = result.steps?.filter((step: { type: string }) => step.type === 'model_output')
     .flatMap((step: { content?: unknown[] }) => step.content || [])
