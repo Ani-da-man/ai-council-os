@@ -62,6 +62,14 @@ Each council member has a distinct voice, reasoning style, and role. Before resp
 
 This is prompt-time guidance: the app retrieves relevant knowledge for each response. It does not update the underlying model weights. Advisors are instructed to distinguish general practices from assumptions about a particular company, avoid inventing facts or statistics, and flag high-stakes legal, tax, investment, or regulated-industry decisions for qualified review.
 
+## Voice-first conversations and Indian language support
+
+The interface stays in English, and English is the default conversation language. Founders can type or speak in English, Marathi, Hindi, Tamil, Kannada, Malayalam, Telugu, Bengali, or Gujarati. The app detects language from typed text automatically (using the browser language detector where available, with script-based detection as a fallback) and asks the council to reply in the same language. Advisor chats follow the language of each new message.
+
+Voice is the primary input path. Browser speech recognition provides live transcription. For automatic multilingual audio transcription, configure a Gemini API key and enable **Improve voice language detection with Gemini** before recording. That explicit option sends the recording to Gemini to detect its language and produce a same-language transcript; review the transcript before continuing. Without that option, the browser speech-recognition service handles transcription, and its language accuracy depends on browser support and recognition settings.
+
+Council replies remain available as text. Use **Listen** on an advisor response or **Listen to directive** for optional spoken playback. Playback uses voices installed on the current device; availability and quality vary by browser and operating system. The app reports when a matching voice is unavailable.
+
 The demo workspace snapshot does not need an API key. Live Gemini responses require your configured Gemini key; local Gemma can run without a key when the browser supports WebGPU. If neither is available, the built-in fallback is used.
 
 ## Deploy to Render
